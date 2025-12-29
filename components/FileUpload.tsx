@@ -49,7 +49,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
     return fullText
   }
 
-  // PDF를 여러 이미지로 변환 (모든 페이지) - 백업용
+  // PDF를 여러 이미지로 변환 (스캔된 PDF용)
   const convertPdfToImages = async (pdfFile: File): Promise<File[]> => {
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
@@ -57,7 +57,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
-      const scale = 4  // 해상도 높임 (OCR 정확도 향상)
+      const scale = 6  // 고해상도 (정확도 향상)
       const viewport = page.getViewport({ scale })
 
       const canvas = document.createElement('canvas')
@@ -94,27 +94,33 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
             continue
           }
 
-          // 먼저 텍스트 추출 시도
+          // PDF에서 텍스트 직접 추출 (항상 텍스트 기반 추출 사용)
           console.log('=== PDF 텍스트 추출 시도 ===')
           const text = await extractTextFromPdf(file)
-          const textLength = text.replace(/\s/g, '').length
-          console.log('추출된 텍스트 길이 (공백 제외):', textLength)
+
+          // 페이지 태그를 제외한 실제 콘텐츠만 추출
+          const contentOnly = text.replace(/\[페이지 \d+\]\s*/g, '').trim()
+          const contentLength = contentOnly.replace(/\s/g, '').length
+
+          console.log('추출된 텍스트 길이 (실제 콘텐츠, 공백 제외):', contentLength)
           console.log('추출된 텍스트 미리보기:', text.slice(0, 500))
 
-          // 텍스트가 충분히 추출되었는지 확인 (최소 100자 이상)
-          if (textLength > 100) {
+          // 실제 콘텐츠가 있는지 확인 (최소 50자 이상의 실제 텍스트)
+          if (contentLength >= 50) {
             console.log('✓ 텍스트 추출 성공! 텍스트 기반 추출 모드 사용')
             combinedText += `[파일: ${file.name}]\n${text}\n\n`
-            // 텍스트 추출 성공 시 원본 PDF를 파일 목록에 추가 (표시용)
             newFiles.push(new File([file], file.name, { type: 'text/plain' }))
           } else {
-            // 텍스트 추출 실패 시 이미지로 변환
-            console.log('✗ 텍스트 추출 실패 (100자 미만), 이미지로 변환')
+            // 실제 콘텐츠가 없는 경우 (스캔된 PDF) → 이미지로 변환
+            console.log('✗ 텍스트 추출 실패 (스캔된 PDF), 이미지로 변환하여 Vision API 사용')
             const images = await convertPdfToImages(file)
             newFiles.push(...images)
+            console.log(`✓ ${images.length}개 이미지로 변환 완료`)
           }
         } else if (file.type.startsWith('image/')) {
-          newFiles.push(file)
+          // 이미지 파일은 지원하지 않음 (정확도 문제)
+          alert('이미지 파일은 지원하지 않습니다. PDF 파일만 업로드해주세요.')
+          continue
         }
       }
 
@@ -172,7 +178,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
       >
         <input
           type="file"
-          accept=".pdf,image/*"
+          accept=".pdf"
           onChange={handleFileInput}
           className="hidden"
           id="file-upload"
@@ -198,10 +204,10 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
                 </svg>
               </div>
               <p className="text-gray-600">
-                PDF 또는 이미지 파일을 드래그하거나 클릭하여 업로드
+                PDF 파일을 드래그하거나 클릭하여 업로드
               </p>
               <p className="text-sm text-gray-400">
-                여러 파일 선택 가능 | PDF 텍스트 자동 추출
+                여러 파일 선택 가능 | 텍스트 자동 추출
               </p>
             </div>
           )}

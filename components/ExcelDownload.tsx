@@ -1,7 +1,7 @@
 'use client'
 
 import { ExtractedData, DocumentType } from '@/app/page'
-import * as XLSX from 'xlsx'
+import XLSX from 'xlsx-js-style'
 
 interface ExcelDownloadProps {
   data: ExtractedData
@@ -71,19 +71,103 @@ const fieldLabels: Record<string, string> = {
   validityPeriod: '유효기간',
 }
 
+// 헤더 스타일 (옅은 회색 배경)
+const headerStyle = {
+  fill: { fgColor: { rgb: 'E8E8E8' } },
+  font: { bold: true },
+  border: {
+    top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    right: { style: 'thin', color: { rgb: 'CCCCCC' } },
+  },
+  alignment: { vertical: 'center' },
+}
+
+// 일반 셀 스타일
+const cellStyle = {
+  border: {
+    top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+    right: { style: 'thin', color: { rgb: 'CCCCCC' } },
+  },
+  alignment: { vertical: 'center', wrapText: true },
+}
+
+// 계약조건 등 배열 데이터를 줄바꿈으로 분리
+const formatArrayValue = (value: any): string => {
+  if (Array.isArray(value)) {
+    return value.join('\n')
+  }
+  return value !== null && value !== undefined ? String(value) : ''
+}
+
+// 계약내용 등 긴 텍스트를 문장 단위로 줄바꿈
+const formatLongText = (value: string): string => {
+  // 마침표 뒤에 줄바꿈 추가 (단, 숫자.숫자 형태는 제외)
+  return value.replace(/\. (?![0-9])/g, '.\n')
+}
+
 export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
   const handleDownload = () => {
-    // 데이터를 엑셀 형식으로 변환
-    const excelData = Object.entries(data.fields).map(([key, value]) => ({
-      항목: fieldLabels[key] || key,
-      값: value !== null && value !== undefined ? String(value) : '',
-    }))
+    // 데이터를 행 배열로 변환 (헤더 포함)
+    const rows: any[][] = [['항목', '값']]
+
+    // 긴 텍스트 필드 (문장 단위 줄바꿈 적용)
+    const longTextFields = ['contractContent', 'description', 'transactionContent']
+
+    Object.entries(data.fields).forEach(([key, value]) => {
+      const label = fieldLabels[key] || key
+      let formattedValue = formatArrayValue(value)
+
+      // 긴 텍스트 필드는 문장 단위로 줄바꿈
+      if (longTextFields.includes(key) && typeof formattedValue === 'string') {
+        formattedValue = formatLongText(formattedValue)
+      }
+
+      rows.push([label, formattedValue])
+    })
 
     // 워크시트 생성
-    const ws = XLSX.utils.json_to_sheet(excelData)
+    const ws = XLSX.utils.aoa_to_sheet(rows)
 
     // 컬럼 너비 설정
-    ws['!cols'] = [{ wch: 25 }, { wch: 50 }]
+    ws['!cols'] = [{ wch: 20 }, { wch: 80 }]
+
+    // 행 높이 설정 (배열/긴텍스트 데이터는 더 높게)
+    const rowHeights: { hpt: number }[] = [{ hpt: 25 }] // 헤더 높이
+    Object.entries(data.fields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        // 배열 항목 수에 따라 높이 조정 (항목당 20pt)
+        rowHeights.push({ hpt: Math.max(25, value.length * 20) })
+      } else if (longTextFields.includes(key) && typeof value === 'string') {
+        // 긴 텍스트는 문장 수에 따라 높이 조정
+        const sentenceCount = (value.match(/\. /g) || []).length + 1
+        rowHeights.push({ hpt: Math.max(25, sentenceCount * 20) })
+      } else {
+        rowHeights.push({ hpt: 25 })
+      }
+    })
+    ws['!rows'] = rowHeights
+
+    // 스타일 적용
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
+        if (!ws[cellAddress]) continue
+
+        if (R === 0) {
+          // 헤더 행 스타일
+          ws[cellAddress].s = headerStyle
+        } else {
+          // 데이터 행 스타일
+          ws[cellAddress].s = cellStyle
+        }
+      }
+    }
 
     // 워크북 생성
     const wb = XLSX.utils.book_new()
