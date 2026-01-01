@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { detectDocumentType, detectDocumentTypeFromText, extractFromMultipleImages, extractFromText } from '@/lib/claude'
 import { DocumentType } from '@/app/page'
+import { validateAndFixContractAmount } from '@/lib/koreanAmount'
+
+// 계약서 금액 필드 검증 및 수정
+function postProcessFields(documentType: DocumentType, fields: Record<string, any>): Record<string, any> {
+  if (documentType === 'contract' && fields.contractAmount) {
+    const originalAmount = fields.contractAmount
+    const fixedAmount = validateAndFixContractAmount(String(fields.contractAmount))
+    if (originalAmount !== fixedAmount) {
+      console.log(`[금액 자동 수정] "${originalAmount}" -> "${fixedAmount}"`)
+    }
+    fields.contractAmount = fixedAmount
+  }
+  return fields
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,7 +60,10 @@ export async function POST(request: NextRequest) {
       }
 
       // 텍스트 기반 추출
-      const fields = await extractFromText(pdfText, documentType)
+      let fields = await extractFromText(pdfText, documentType)
+
+      // 후처리: 금액 검증 및 수정
+      fields = postProcessFields(documentType, fields)
 
       return NextResponse.json({
         documentType,
@@ -105,7 +122,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 모든 이미지를 한 번에 Claude에 전송하여 정보 추출
-    const fields = await extractFromMultipleImages(images, documentType)
+    let fields = await extractFromMultipleImages(images, documentType)
+
+    // 후처리: 금액 검증 및 수정
+    fields = postProcessFields(documentType, fields)
 
     return NextResponse.json({
       documentType,

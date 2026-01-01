@@ -93,11 +93,24 @@ export default function BatchPage() {
     return data.text
   }
 
+  // 지원하는 파일 형식 체크
+  const isValidFile = (file: File): boolean => {
+    const validTypes = [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/webp',
+      'image/bmp',
+      'image/tiff',
+    ]
+    return validTypes.includes(file.type)
+  }
+
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type === 'application/pdf'
-    )
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(isValidFile)
     const newFiles: ProcessingFile[] = droppedFiles.map((file) => ({
       file,
       status: 'pending',
@@ -107,15 +120,27 @@ export default function BatchPage() {
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files).filter(
-        (f) => f.type === 'application/pdf'
-      )
+      const selectedFiles = Array.from(e.target.files).filter(isValidFile)
       const newFiles: ProcessingFile[] = selectedFiles.map((file) => ({
         file,
         status: 'pending',
       }))
       setFiles((prev) => [...prev, ...newFiles])
     }
+  }
+
+  // 이미지 파일을 base64로 변환
+  const convertImageToBase64 = async (imageFile: File): Promise<{ base64: string; mediaType: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const base64 = result.split(',')[1]
+        resolve({ base64, mediaType: imageFile.type })
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(imageFile)
+    })
   }
 
   const processFile = async (fileItem: ProcessingFile): Promise<ExtractedData> => {
@@ -169,8 +194,29 @@ export default function BatchPage() {
           formData.append('fileCount', images.length.toString())
         }
       }
+    } else if (fileItem.file.type.startsWith('image/')) {
+      // 이미지 파일: Google Vision OCR 사용
+      console.log(`=== 이미지 처리: ${fileItem.file.name} ===`)
+
+      const imageData = await convertImageToBase64(fileItem.file)
+      console.log('이미지 변환 완료, OCR 시도...')
+
+      const ocrText = await callGoogleOcr([imageData])
+      console.log('Google OCR 결과 길이:', ocrText.length)
+
+      if (ocrText && ocrText.length > 50) {
+        // OCR 텍스트로 추출
+        formData.append('pdfText', ocrText)
+        formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+        formData.append('fileCount', '1')
+      } else {
+        // OCR 텍스트가 부족하면 Claude Vision 사용
+        console.log('OCR 텍스트 부족, Claude Vision 사용')
+        formData.append('file0', fileItem.file)
+        formData.append('fileCount', '1')
+      }
     } else {
-      // 이미지 파일 직접 전송
+      // 기타 파일
       formData.append('file0', fileItem.file)
       formData.append('fileCount', '1')
     }
@@ -260,7 +306,7 @@ export default function BatchPage() {
             대량 증빙 일괄 처리
           </h1>
           <p className="text-gray-600">
-            여러 PDF 파일을 한 번에 처리하여 통합 엑셀로 내보냅니다
+            여러 PDF/이미지 파일을 한 번에 처리하여 통합 엑셀로 내보냅니다
           </p>
           <a href="/" className="text-blue-600 hover:underline text-sm mt-2 inline-block">
             ← 단일 파일 처리로 돌아가기
@@ -278,7 +324,7 @@ export default function BatchPage() {
           >
             <input
               type="file"
-              accept=".pdf"
+              accept=".pdf,image/*"
               onChange={handleFileInput}
               className="hidden"
               id="batch-file-upload"
@@ -292,10 +338,10 @@ export default function BatchPage() {
                 </svg>
               </div>
               <p className="text-gray-600 font-medium">
-                PDF 파일들을 드래그하거나 클릭하여 업로드
+                PDF 또는 이미지 파일을 드래그하거나 클릭하여 업로드
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                여러 파일을 한 번에 선택할 수 있습니다
+                PDF, PNG, JPG, GIF, WEBP 등 지원 (여러 파일 선택 가능)
               </p>
             </label>
           </div>

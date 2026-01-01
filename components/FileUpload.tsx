@@ -144,8 +144,34 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
             }
           }
         } else if (file.type.startsWith('image/')) {
-          alert('이미지 파일은 지원하지 않습니다. PDF 파일만 업로드해주세요.')
-          continue
+          // 이미지 파일: Google Vision OCR 사용
+          console.log('=== 이미지 파일 처리 ===')
+          setConversionStatus('이미지 OCR 처리 중...')
+
+          // 이미지를 base64로 변환
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = reader.result as string
+              resolve(result.split(',')[1])
+            }
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
+
+          const imageData = { base64, mediaType: file.type }
+          const ocrText = await callGoogleOcr([imageData])
+          console.log('Google OCR 결과 길이:', ocrText.length)
+
+          if (ocrText && ocrText.length > 50) {
+            // OCR 텍스트로 추출
+            combinedText += `[파일: ${file.name} (OCR)]\n${ocrText}\n\n`
+            newFiles.push(new File([file], file.name, { type: 'text/plain' }))
+          } else {
+            // OCR 텍스트가 부족하면 Claude Vision 사용
+            console.log('OCR 텍스트 부족, Claude Vision 사용')
+            newFiles.push(file)
+          }
         }
       }
 
@@ -204,7 +230,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
       >
         <input
           type="file"
-          accept=".pdf"
+          accept=".pdf,image/*"
           onChange={handleFileInput}
           className="hidden"
           id="file-upload"
@@ -230,10 +256,10 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
                 </svg>
               </div>
               <p className="text-gray-600">
-                PDF 파일을 드래그하거나 클릭하여 업로드
+                PDF 또는 이미지 파일을 드래그하거나 클릭하여 업로드
               </p>
               <p className="text-sm text-gray-400">
-                텍스트 PDF / 스캔 PDF 모두 지원 (Google OCR)
+                PDF, PNG, JPG 등 지원 (Google OCR)
               </p>
             </div>
           )}
