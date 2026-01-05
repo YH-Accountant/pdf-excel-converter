@@ -24,9 +24,16 @@ export interface AccountingEntry {
   description: string
 }
 
+// 회계전표 슬립 타입 (여러 전표를 담는 배열용)
+export interface AccountingSlip {
+  slipNumber: string
+  slipDate: string
+  entries: AccountingEntry[]
+}
+
 export interface ExtractedData {
   documentType: DocumentType
-  fields: Record<string, string | number | null | AccountingEntry[]>
+  fields: Record<string, string | number | null | AccountingEntry[] | AccountingSlip[]>
   rawText?: string
 }
 

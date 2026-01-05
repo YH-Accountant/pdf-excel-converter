@@ -145,37 +145,43 @@ export const documentTemplates: Record<DocumentType, {
 
   accountingSlip: {
     label: '회계전표',
-    fields: ['slipNumber', 'slipDate', 'entries'],
+    fields: ['slips'],
     prompt: `당신은 회계전표 분석 전문가입니다. 아래 회계전표에서 핵심 정보를 정확하게 추출해주세요.
 
+[중요] 문서에 여러 개의 전표가 있으면 "slips" 배열에 모두 포함해야 합니다!
+
 [추출 규칙]
-1. slipNumber (전표번호)
-   - 문서에 기재된 전표번호 그대로
+각 전표마다 다음 정보를 추출:
+1. slipNumber (전표번호) - 문서에 기재된 전표번호 그대로
+2. slipDate (전표일자) - YYYY-MM-DD 형식
+3. entries (분개 내역) - 배열 형식
+   - 각 라인: accountCode(계정과목), debit(차변, 숫자), credit(대변, 숫자), description(적요)
 
-2. slipDate (전표일자)
-   - YYYY-MM-DD 형식
-
-3. entries (분개 내역) - 배열 형식으로 추출
-   - 회계전표에 있는 모든 분개 라인을 배열로 추출
-   - 각 라인은 다음 필드를 포함:
-     * accountCode: 계정과목명
-     * debit: 차변 금액 (숫자만, 없으면 0)
-     * credit: 대변 금액 (숫자만, 없으면 0)
-     * description: 적요/거래내용
-
-[응답 형식 예시]
+[응답 형식 - 반드시 이 형식으로!]
 {
-  "slipNumber": "J2025-0001",
-  "slipDate": "2025-01-15",
-  "entries": [
-    { "accountCode": "현금", "debit": 1000000, "credit": 0, "description": "매출대금 수령" },
-    { "accountCode": "매출", "debit": 0, "credit": 1000000, "description": "상품 판매" }
+  "slips": [
+    {
+      "slipNumber": "J2025-0001",
+      "slipDate": "2025-01-15",
+      "entries": [
+        { "accountCode": "현금", "debit": 1000000, "credit": 0, "description": "매출대금 수령" },
+        { "accountCode": "매출", "debit": 0, "credit": 1000000, "description": "상품 판매" }
+      ]
+    },
+    {
+      "slipNumber": "J2025-0002",
+      "slipDate": "2025-01-16",
+      "entries": [
+        { "accountCode": "비품", "debit": 500000, "credit": 0, "description": "사무용품 구입" },
+        { "accountCode": "보통예금", "debit": 0, "credit": 500000, "description": "대금 지급" }
+      ]
+    }
   ]
 }
 
 [중요]
-- 전표에 여러 줄의 분개가 있으면 모두 entries 배열에 포함
-- 차변 합계와 대변 합계가 일치해야 함 (복식부기 원칙)
+- 전표가 1개든 10개든 반드시 "slips" 배열 안에 넣어주세요
+- 각 전표의 차변 합계와 대변 합계가 일치해야 함 (복식부기 원칙)
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 
@@ -243,13 +249,13 @@ export const documentTemplates: Record<DocumentType, {
 
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
-    fields: ['attributionMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
+    fields: ['attributionYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
     prompt: `당신은 원천징수이행상황신고서 분석 전문가입니다. 아래 신고서에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
-1. attributionMonth (귀속 연월)
+1. attributionYearMonth (귀속년월)
    - YYYY-MM 형식
-   - 예: "2025-01"
+   - 예: "2025-03"
 
 2. numberOfPeople (인원수)
    - 숫자만
@@ -257,15 +263,19 @@ export const documentTemplates: Record<DocumentType, {
 
 3. totalPayment (총 지급액)
    - 숫자만 (콤마 없이)
-   - 예: 50000000
+   - 예: 264000000
 
 4. incomeTax (소득세)
    - 숫자만 (콤마 없이)
+   - 예: 20420000
 
 5. localIncomeTax (지방소득세)
    - 숫자만 (콤마 없이)
+   - 소득세의 10%로 계산
+   - 예: incomeTax가 20420000이면 localIncomeTax는 2042000
 
 [중요]
+- 지방소득세는 소득세의 10%입니다
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 

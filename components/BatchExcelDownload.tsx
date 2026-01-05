@@ -1,6 +1,6 @@
 'use client'
 
-import { ExtractedData, DocumentType, AccountingEntry } from '@/app/page'
+import { ExtractedData, DocumentType, AccountingEntry, AccountingSlip } from '@/app/page'
 import XLSX from 'xlsx-js-style'
 
 interface BatchExcelDownloadProps {
@@ -74,7 +74,7 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
     { key: 'reason', label: '사유' },
   ],
   withholdingTax: [
-    { key: 'attributionMonth', label: '귀속월' },
+    { key: 'attributionYearMonth', label: '귀속년월' },
     { key: 'numberOfPeople', label: '인원' },
     { key: 'totalPayment', label: '총지급액' },
     { key: 'incomeTax', label: '소득세' },
@@ -154,37 +154,67 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
       let dataRows: any[][]
       let totalLines = 0
 
-      // 회계전표는 entries 배열을 펼쳐서 각 분개 라인을 별도 행으로 출력
+      // 회계전표는 slips 배열 내의 entries를 펼쳐서 각 분개 라인을 별도 행으로 출력
       if (documentType === 'accountingSlip') {
         dataRows = []
         docResults.forEach((result) => {
-          const slipNumber = result.fields.slipNumber || ''
-          const slipDate = result.fields.slipDate || ''
-          const entries = result.fields.entries as AccountingEntry[] | undefined
+          // 새 형식: slips 배열
+          const slips = result.fields.slips as AccountingSlip[] | undefined
 
-          if (entries && Array.isArray(entries)) {
-            entries.forEach((entry) => {
+          if (slips && Array.isArray(slips)) {
+            slips.forEach((slip, slipIndex) => {
+              const slipNumber = slip.slipNumber || ''
+              const slipDate = slip.slipDate || ''
+              const entries = slip.entries
+
+              if (entries && Array.isArray(entries)) {
+                entries.forEach((entry) => {
+                  dataRows.push([
+                    slipNumber,
+                    slipDate,
+                    entry.accountCode || '',
+                    formatNumber(entry.debit),
+                    formatNumber(entry.credit),
+                    entry.description || '',
+                  ])
+                  totalLines++
+                })
+                // 전표 사이에 빈 행 추가 (마지막 전표 제외)
+                if (slipIndex < slips.length - 1) {
+                  dataRows.push(['', '', '', '', '', ''])
+                }
+              }
+            })
+          } else {
+            // 기존 형식 호환 (entries만 있는 경우)
+            const slipNumber = result.fields.slipNumber || ''
+            const slipDate = result.fields.slipDate || ''
+            const entries = result.fields.entries as AccountingEntry[] | undefined
+
+            if (entries && Array.isArray(entries)) {
+              entries.forEach((entry) => {
+                dataRows.push([
+                  slipNumber,
+                  slipDate,
+                  entry.accountCode || '',
+                  formatNumber(entry.debit),
+                  formatNumber(entry.credit),
+                  entry.description || '',
+                ])
+                totalLines++
+              })
+            } else {
+              // 완전히 이전 형식 (단일 분개)
               dataRows.push([
                 slipNumber,
                 slipDate,
-                entry.accountCode || '',
-                formatNumber(entry.debit),
-                formatNumber(entry.credit),
-                entry.description || '',
+                result.fields.accountCode || '',
+                formatNumber(result.fields.debit),
+                formatNumber(result.fields.credit),
+                result.fields.description || '',
               ])
               totalLines++
-            })
-          } else {
-            // entries가 없는 경우 (기존 형식 호환)
-            dataRows.push([
-              slipNumber,
-              slipDate,
-              result.fields.accountCode || '',
-              formatNumber(result.fields.debit),
-              formatNumber(result.fields.credit),
-              result.fields.description || '',
-            ])
-            totalLines++
+            }
           }
         })
       } else if (documentType === 'contract') {

@@ -79,7 +79,7 @@ const fieldLabels: Record<string, string> = {
   amount: '금액',
   reason: '사유',
   // 원천징수신고서
-  attributionMonth: '귀속월',
+  attributionYearMonth: '귀속년월',
   numberOfPeople: '인원',
   totalPayment: '총지급액',
   incomeTax: '소득세',
