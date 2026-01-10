@@ -1,6 +1,6 @@
 'use client'
 
-import { ExtractedData, DocumentType, AccountingEntry, AccountingSlip } from '@/app/page'
+import { ExtractedData, DocumentType, AccountingEntry, AccountingSlip } from '@/app/single/page'
 import XLSX from 'xlsx-js-style'
 
 interface BatchExcelDownloadProps {
@@ -16,6 +16,7 @@ const documentTypeLabels: Record<DocumentType, string> = {
   assetDisposal: '취득처분전표',
   withholdingTax: '원천징수신고서',
   estimate: '견적서',
+  payroll: '급여대장',
 }
 
 // 문서 유형별 헤더 정의
@@ -99,6 +100,13 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
     { key: 'unitPrice', label: '단가' },
     { key: 'totalAmount', label: '합계금액' },
     { key: 'validityPeriod', label: '유효기간' },
+  ],
+  payroll: [
+    { key: '_rowNumber', label: 'No.' },
+    { key: 'paymentYearMonth', label: '귀속년월' },
+    { key: 'paymentDate', label: '지급일' },
+    { key: 'companyName', label: '회사명' },
+    { key: 'totalNetPay', label: '실지급액합계' },
   ],
 }
 

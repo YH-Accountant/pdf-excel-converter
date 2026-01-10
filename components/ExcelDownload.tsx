@@ -1,6 +1,6 @@
 'use client'
 
-import { ExtractedData, DocumentType, AccountingEntry } from '@/app/page'
+import { ExtractedData, DocumentType, AccountingEntry } from '@/app/single/page'
 import XLSX from 'xlsx-js-style'
 
 interface ExcelDownloadProps {
@@ -17,6 +17,7 @@ const documentTypeLabels: Record<DocumentType, string> = {
   assetDisposal: '취득처분전표',
   withholdingTax: '원천징수신고서',
   estimate: '견적서',
+  payroll: '급여대장',
 }
 
 const fieldLabels: Record<string, string> = {
@@ -72,6 +73,12 @@ const fieldLabels: Record<string, string> = {
   // 견적서
   createdDate: '작성일',
   validityPeriod: '유효기간',
+  // 급여대장
+  paymentYearMonth: '귀속년월',
+  paymentDate: '지급일',
+  companyName: '회사명',
+  employees: '직원목록',
+  totalNetPay: '실지급액합계',
 }
 
 // 헤더 스타일 (옅은 회색 배경)

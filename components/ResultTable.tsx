@@ -1,6 +1,6 @@
 'use client'
 
-import { ExtractedData, DocumentType, AccountingEntry } from '@/app/page'
+import { ExtractedData, DocumentType, AccountingEntry } from '@/app/single/page'
 
 interface ResultTableProps {
   data: ExtractedData
@@ -15,6 +15,7 @@ const documentTypeLabels: Record<DocumentType, string> = {
   assetDisposal: '취득처분전표',
   withholdingTax: '급여원천징수이행상황신고서',
   estimate: '견적서',
+  payroll: '급여대장',
 }
 
 // 숫자 금액 필드 (콤마 포맷 적용)

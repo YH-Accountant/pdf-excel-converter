@@ -1,4 +1,4 @@
-import { DocumentType } from '@/app/page'
+import { DocumentType } from '@/app/single/page'
 
 // 문서 유형별 추출 필드 정의
 export const documentTemplates: Record<DocumentType, {
@@ -187,34 +187,71 @@ export const documentTemplates: Record<DocumentType, {
 
   bankStatement: {
     label: '통장 입출금내역',
-    fields: ['transactionDate', 'deposit', 'withdrawal', 'balance', 'transactionContent', 'counterparty'],
-    prompt: `당신은 통장 입출금내역 분석 전문가입니다. 아래 통장 내역에서 핵심 정보를 정확하게 추출해주세요.
+    fields: ['transactionDate', 'deposit', 'withdrawal', 'balance', 'transactionContent', 'counterparty', 'transactions', 'totalWithdrawal'],
+    prompt: `당신은 통장 입출금내역/이체확인증 분석 전문가입니다. 아래 문서에서 핵심 정보를 정확하게 추출해주세요.
+
+[문서 유형]
+- 이체확인증: 일괄이체 총액이 표시됨
+- 거래내역조회: 개별 거래 내역이 나열됨
 
 [추출 규칙]
 1. transactionDate (거래일)
    - YYYY-MM-DD 형식
-   - 여러 거래가 있으면 가장 최근 거래일
 
-2. deposit (입금액)
+2. totalWithdrawal (출금 총액) ★ 핵심 필드
+   - 숫자만 (콤마 없이)
+   - 이체확인증: "이체금액" 또는 "출금금액" 값
+   - 거래내역조회: 모든 출금액의 합계 (합계 행이 있으면 그 값 사용)
+   - 예: 29937410
+
+3. transactions (개별 거래 내역)
+   - 거래내역조회인 경우 배열로 추출
+   - 각 거래: { "description": "적요/기재내용", "withdrawal": 출금액 }
+   - 적요에 이름이 있으면 그대로 추출 (예: "김민수", "급여이체")
+
+   예시:
+   [
+     { "description": "김민수", "withdrawal": 3866000 },
+     { "description": "이서연", "withdrawal": 4590000 }
+   ]
+
+4. deposit (입금액)
    - 숫자만 (콤마 없이)
    - 없으면 0
 
-3. withdrawal (출금액)
+5. withdrawal (출금액) - 단일 거래용
    - 숫자만 (콤마 없이)
-   - 없으면 0
 
-4. balance (잔액)
+6. balance (잔액)
    - 숫자만 (콤마 없이)
-   - 가장 최근 잔액
 
-5. transactionContent (거래 내용)
-   - 거래 적요 또는 내용
+7. transactionContent (거래 내용)
+   - 거래 적요 또는 메모
 
-6. counterparty (거래 상대방)
+8. counterparty (거래 상대방)
    - 입금자 또는 출금 대상
 
+[응답 형식 예시 - 이체확인증]
+{
+  "transactionDate": "2025-12-25",
+  "totalWithdrawal": 29937410,
+  "transactionContent": "12월 급여",
+  "counterparty": "김민수 외 6명"
+}
+
+[응답 형식 예시 - 거래내역조회]
+{
+  "transactionDate": "2025-12-25",
+  "totalWithdrawal": 29937410,
+  "transactions": [
+    { "description": "김민수", "withdrawal": 3866000 },
+    { "description": "이서연", "withdrawal": 4590000 }
+  ]
+}
+
 [중요]
-- 여러 거래가 있는 경우 주요 거래 또는 최근 거래 기준으로 추출
+- totalWithdrawal은 반드시 추출해야 합니다 (급여 크로스체크에 필수)
+- 합계 행이 있으면 그 값을 totalWithdrawal로 사용
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 
@@ -326,15 +363,77 @@ export const documentTemplates: Record<DocumentType, {
    - 숫자만 (콤마 없이)
    - 여러 품목인 경우 각각 표기
 
-6. totalAmount (합계 금액)
-   - 형식: "한글금액(숫자, VAT 별도/포함)"
-   - 한글 금액이 있으면 한글 금액을 우선 기재
-   - 예: "오천만원(50,000,000원, VAT 별도)"
+6. totalAmount (합계 금액) ★ 핵심 필드 - 정확하게 추출!
+   - 형식: "한글금액(숫자원, VAT 별도/포함)"
+   - 반드시 문서에 기재된 합계금액을 정확히 읽을 것
+   - 한글 금액이 있으면 한글을 숫자로 정확히 변환:
+     * 이천육백사십만원 = 26,400,000원
+     * 오천만원 = 50,000,000원
+     * 일억원 = 100,000,000원
+   - 예: "이천육백사십만원(26,400,000원, VAT 포함)"
+   - 주의: 한글 금액과 숫자 금액이 일치해야 함!
 
 7. validityPeriod (견적 유효기간)
    - 예: "견적일로부터 30일", "2025-02-28까지"
 
 [중요]
+- 금액 추출 시 한글 금액을 정확히 숫자로 변환할 것!
+  * 만 = 10,000
+  * 십만 = 100,000
+  * 백만 = 1,000,000
+  * 천만 = 10,000,000
+  * 억 = 100,000,000
+- 문서에서 명확히 확인되지 않는 정보는 null로 표시`
+  },
+
+  payroll: {
+    label: '급여대장',
+    fields: ['paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay'],
+    prompt: `당신은 급여대장 분석 전문가입니다. 아래 급여대장(더존 등 회계프로그램 출력물)에서 핵심 정보를 정확하게 추출해주세요.
+
+[추출 규칙]
+1. paymentYearMonth (귀속년월)
+   - YYYY-MM 형식
+   - 예: "2025-01"
+
+2. paymentDate (지급일)
+   - YYYY-MM-DD 형식
+   - 급여 지급일
+
+3. companyName (회사명)
+   - 급여를 지급하는 회사명
+
+4. employees (직원 목록) ★ 핵심 필드
+   - 배열 형식으로 모든 직원 정보 추출
+   - 각 직원: name(성명), baseSalary(기본급), allowances(수당합계), grossPay(지급총액), deductions(공제총액), netPay(실지급액)
+   - netPay(실지급액)가 가장 중요! 반드시 추출할 것
+
+   예시:
+   [
+     { "name": "홍길동", "baseSalary": 3000000, "allowances": 500000, "grossPay": 3500000, "deductions": 400000, "netPay": 3100000 },
+     { "name": "김철수", "baseSalary": 2800000, "allowances": 300000, "grossPay": 3100000, "deductions": 350000, "netPay": 2750000 }
+   ]
+
+5. totalNetPay (실지급액 합계)
+   - 모든 직원의 실지급액(netPay) 합계
+   - 숫자만 (콤마 없이)
+   - 예: 25800000
+
+[응답 형식]
+{
+  "paymentYearMonth": "2025-01",
+  "paymentDate": "2025-01-25",
+  "companyName": "주식회사 OO",
+  "employees": [
+    { "name": "홍길동", "baseSalary": 3000000, "allowances": 500000, "grossPay": 3500000, "deductions": 400000, "netPay": 3100000 },
+    { "name": "김철수", "baseSalary": 2800000, "allowances": 300000, "grossPay": 3100000, "deductions": 350000, "netPay": 2750000 }
+  ],
+  "totalNetPay": 5850000
+}
+
+[중요]
+- 실지급액(netPay)은 급여 크로스체크에 사용되므로 정확하게 추출
+- 모든 직원을 빠짐없이 추출
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 }
@@ -349,5 +448,6 @@ export const documentTypeDetectionPrompt = `이 문서의 유형을 판별해주
 - assetDisposal: 취득처분전표 (자산 취득/처분 관련)
 - withholdingTax: 급여원천징수이행상황신고서
 - estimate: 견적서
+- payroll: 급여대장 (급여명세서, 급여지급내역, 급여대장 등)
 
 JSON 형식으로 응답해주세요: { "documentType": "선택한유형" }`

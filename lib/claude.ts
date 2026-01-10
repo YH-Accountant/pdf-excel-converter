@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { DocumentType } from '@/app/page'
+import { DocumentType } from '@/app/single/page'
 import { documentTemplates, documentTypeDetectionPrompt } from './templates'
 import { validateAmountFields } from './amountUtils'
 
@@ -186,9 +186,15 @@ ${pdfText}
 - accountingSlip: 회계전표 (전표번호, 계정과목, 차변, 대변, 적요 등이 있음)
 - tradingStatement: 거래명세서 (품목, 수량, 단가, 금액 등이 있음)
 - contract: 계약서 (갑, 을, 계약내용, 계약금액 등이 있음)
-- bankStatement: 통장입출금내역 (거래일, 입금, 출금, 잔액 등이 있음)
-- withholdingTax: 원천징수신고서 (귀속년월, 소득세, 지방소득세 등이 있음)
+- bankStatement: 통장입출금내역, 이체확인증, 거래내역조회 (거래일, 입금, 출금, 잔액, 이체금액 등)
+- withholdingTax: 원천징수이행상황신고서 (세무서 제출용, 원천징수세액, 징수의무자 등)
 - estimate: 견적서 (품목, 수량, 단가, 합계금액 등이 있음)
+- payroll: 급여대장 (직원별 기본급, 수당, 공제, 실지급액, 급여명세 등이 있음)
+
+[중요 구분 기준]
+- payroll(급여대장): 직원 이름, 기본급, 수당, 공제항목, 실지급액이 있는 급여지급내역
+- withholdingTax(원천징수신고서): 세무서 제출용 신고서 형식, 원천징수세액 집계
+- bankStatement(통장내역): 이체확인증, 거래내역조회, 계좌 입출금 내역
 
 [응답 형식]
 JSON 배열로 응답해주세요:

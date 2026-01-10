@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { DocumentType, ExtractedData } from '@/app/page'
+import Link from 'next/link'
+import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
 
@@ -33,8 +34,10 @@ export default function BatchPage() {
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
-      cMapUrl: '/cmaps/',
+      cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
       cMapPacked: true,
+      useSystemFonts: true,
+      standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
     }).promise
 
     let fullText = ''
@@ -320,28 +323,44 @@ export default function BatchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 transition-all duration-500">
       <div className="max-w-6xl mx-auto py-12 px-4">
         {/* 헤더 */}
+        <div className="mb-6">
+          <Link
+            href="/"
+            className="inline-flex items-center text-gray-600 hover:text-gray-900 transition-colors bg-white/60 backdrop-blur-sm px-3 py-1.5 rounded-lg"
+          >
+            <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            메인으로
+          </Link>
+        </div>
+
         <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/30 backdrop-blur-sm mb-4">
+            <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+              </svg>
+            </div>
+          </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             대량 증빙 일괄 처리
           </h1>
           <p className="text-gray-600">
             여러 PDF/이미지 파일을 한 번에 처리하여 통합 엑셀로 내보냅니다
           </p>
-          <a href="/" className="text-blue-600 hover:underline text-sm mt-2 inline-block">
-            ← 단일 파일 처리로 돌아가기
-          </a>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
+        <div className="bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg rounded-2xl p-6 space-y-6">
           {/* 파일 업로드 영역 */}
           <div
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
             className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
-              ${files.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}
+              ${files.length > 0 ? 'border-emerald-400 bg-emerald-50/50' : 'border-gray-300 hover:border-emerald-400'}
               ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
           >
             <input
@@ -354,8 +373,8 @@ export default function BatchPage() {
               disabled={isProcessing}
             />
             <label htmlFor="batch-file-upload" className="cursor-pointer">
-              <div className="w-16 h-16 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-16 h-16 mx-auto bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
@@ -392,7 +411,7 @@ export default function BatchPage() {
               {isProcessing && (
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    className="bg-emerald-600 h-2 rounded-full transition-all duration-300"
                     style={{
                       width: `${((stats.completed + stats.error) / stats.total) * 100}%`,
                     }}
@@ -416,7 +435,7 @@ export default function BatchPage() {
                         <span className="w-5 h-5 rounded-full bg-gray-300" />
                       )}
                       {fileItem.status === 'processing' && (
-                        <span className="w-5 h-5 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+                        <span className="w-5 h-5 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" />
                       )}
                       {fileItem.status === 'completed' && (
                         <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs">✓</span>
@@ -428,7 +447,7 @@ export default function BatchPage() {
                       <span className="truncate">{fileItem.file.name}</span>
 
                       {fileItem.result && fileItem.result.length > 0 && (
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">
                           {fileItem.result.length > 1
                             ? `복합: ${fileItem.result.map(r => r.documentType).join(', ')}`
                             : fileItem.result[0].documentType}
@@ -461,7 +480,7 @@ export default function BatchPage() {
             <button
               onClick={startBatchProcess}
               disabled={isProcessing}
-              className="w-full py-3 px-4 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-3 px-4 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-lg hover:shadow-xl"
             >
               {isProcessing
                 ? `처리 중... (${stats.completed + stats.error}/${stats.total})`
@@ -477,7 +496,7 @@ export default function BatchPage() {
 
         {/* 처리 결과 요약 */}
         {completedResults.length > 0 && !isProcessing && (
-          <div className="mt-8 bg-white rounded-xl shadow-sm p-6">
+          <div className="mt-8 bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg rounded-2xl p-6">
             <h2 className="text-lg font-semibold mb-4">처리 결과 요약</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {Object.entries(
@@ -486,8 +505,8 @@ export default function BatchPage() {
                   return acc
                 }, {} as Record<string, number>)
               ).map(([type, count]) => (
-                <div key={type} className="bg-gray-50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-600">{count}</div>
+                <div key={type} className="bg-emerald-50/50 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-emerald-600">{count}</div>
                   <div className="text-sm text-gray-600">{type}</div>
                 </div>
               ))}

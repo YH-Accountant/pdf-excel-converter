@@ -1,6 +1,6 @@
 'use client'
 
-import { DocumentType } from '@/app/page'
+import { DocumentType } from '@/app/single/page'
 
 interface DocumentTypeSelectorProps {
   selectedType: DocumentType | null

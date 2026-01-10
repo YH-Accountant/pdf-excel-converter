@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { detectDocumentType, detectDocumentTypeFromText, detectMultipleDocumentTypesFromText, extractFromMultipleImages, extractFromText, extractMultipleDocumentsFromText } from '@/lib/claude'
-import { DocumentType } from '@/app/page'
+import { DocumentType } from '@/app/single/page'
 import { validateAndFixContractAmount } from '@/lib/koreanAmount'
 
-// 계약서 금액 필드 검증 및 수정
+// 금액 필드 검증 및 수정 (계약서, 견적서)
 function postProcessFields(documentType: DocumentType, fields: Record<string, any>): Record<string, any> {
+  // 계약서 금액 검증
   if (documentType === 'contract' && fields.contractAmount) {
     const originalAmount = fields.contractAmount
     const fixedAmount = validateAndFixContractAmount(String(fields.contractAmount))
     if (originalAmount !== fixedAmount) {
-      console.log(`[금액 자동 수정] "${originalAmount}" -> "${fixedAmount}"`)
+      console.log(`[계약서 금액 자동 수정] "${originalAmount}" -> "${fixedAmount}"`)
     }
     fields.contractAmount = fixedAmount
   }
+
+  // 견적서 금액 검증
+  if (documentType === 'estimate' && fields.totalAmount) {
+    const originalAmount = fields.totalAmount
+    const fixedAmount = validateAndFixContractAmount(String(fields.totalAmount))
+    if (originalAmount !== fixedAmount) {
+      console.log(`[견적서 금액 자동 수정] "${originalAmount}" -> "${fixedAmount}"`)
+    }
+    fields.totalAmount = fixedAmount
+  }
+
   return fields
 }
 

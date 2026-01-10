@@ -27,8 +27,10 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
-      cMapUrl: '/cmaps/',
+      cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
       cMapPacked: true,
+      useSystemFonts: true,
+      standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
     }).promise
 
     let fullText = ''
