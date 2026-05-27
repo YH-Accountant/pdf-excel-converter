@@ -1,10 +1,14 @@
 import vision from '@google-cloud/vision'
-import path from 'path'
 
 // Google Cloud Vision 클라이언트 생성
-const client = new vision.ImageAnnotatorClient({
-  keyFilename: path.join(process.cwd(), 'google-credentials.json'),
-})
+const credentials = process.env.GOOGLE_CREDENTIALS_JSON
+  ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+  : undefined
+
+const client = new vision.ImageAnnotatorClient(
+  credentials ? { credentials } : { keyFilename: 'google-credentials.json' }
+)
+
 
 /**
  * Base64 이미지에서 텍스트 추출 (Google Vision OCR)
