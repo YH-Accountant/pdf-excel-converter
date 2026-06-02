@@ -18,6 +18,7 @@ interface BankTransaction {
 }
 
 interface PayrollData {
+  companyDivision: string
   yearMonth: string
   paymentDate: string
   employees: PayrollEmployee[]
@@ -25,6 +26,7 @@ interface PayrollData {
 }
 
 interface BankData {
+  companyDivision?: string
   transactions: BankTransaction[]
   totalWithdrawal: number
   transferDate?: string
@@ -32,6 +34,7 @@ interface BankData {
 }
 
 interface WithholdingData {
+  companyDivision: string
   attributionYearMonth: string
   paymentYearMonth: string
   numberOfPeople: number
@@ -49,6 +52,8 @@ interface MatchResult {
 }
 
 interface MonthGroup {
+  groupKey: string
+  companyDivision: string
   attributionMonth: string
   paymentMonth: string
   withholding: WithholdingData | null
@@ -100,8 +105,7 @@ export default function PayrollPage() {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const textContent = await page.getTextContent()
-      const pageText = textContent.items.map((item: any) => item.str).join(' ')
-      fullText += `[페이지 ${i}]\n${pageText}\n\n`
+      fullText += `[페이지 ${i}]\n${textContent.items.map((item: any) => item.str).join(' ')}\n\n`
     }
     return fullText
   }
@@ -163,8 +167,7 @@ export default function PayrollPage() {
     return (
       f.file.type === 'application/vnd.ms-excel' ||
       f.file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      name.endsWith('.xls') ||
-      name.endsWith('.xlsx')
+      name.endsWith('.xls') || name.endsWith('.xlsx')
     )
   }
 
@@ -300,7 +303,7 @@ export default function PayrollPage() {
     const excelFiles = pendingFiles.filter(isExcelFile)
     const nonExcelFiles = pendingFiles.filter((f) => !isExcelFile(f))
 
-    // 원천징수 먼저 처리하도록 정렬
+    // 원천징수 먼저 처리
     const sortedNonExcel = [...nonExcelFiles].sort((a, b) =>
       (a.file.name.toLowerCase().includes('원천') ? 0 : 1) -
       (b.file.name.toLowerCase().includes('원천') ? 0 : 1)
@@ -323,6 +326,7 @@ export default function PayrollPage() {
           for (const doc of documents) {
             if (doc.documentType === 'withholdingTax') {
               withholdingList.push({
+                companyDivision: doc.fields.companyDivision || '',
                 attributionYearMonth: doc.fields.attributionYearMonth || '',
                 paymentYearMonth: doc.fields.paymentYearMonth || '',
                 numberOfPeople: doc.fields.numberOfPeople || 0,
@@ -345,6 +349,7 @@ export default function PayrollPage() {
               const transferMonthMatch = String(transferDateRaw).match(/(\d{4})-(\d{2})/)
               const transferMonth = transferMonthMatch ? `${transferMonthMatch[1]}-${transferMonthMatch[2]}` : ''
               rawBankList.push({
+                companyDivision: doc.fields.companyDivision || '',
                 transactions: doc.fields.transactions || [],
                 totalWithdrawal,
                 transferDate: String(transferDateRaw),
@@ -367,14 +372,14 @@ export default function PayrollPage() {
         if (i < sortedNonExcel.length - 1) await delay(3000)
       }
 
-      // Phase 2: 월별 그룹 구성 (원천징수 귀속월 기준)
+      // Phase 2: 월별+사업장별 그룹 구성
       const groupMap = new Map<string, MonthGroup>()
 
       if (withholdingList.length > 0) {
         for (const w of withholdingList) {
-          const key = w.attributionYearMonth || `unknown-${groupMap.size}`
+          const divKey = w.companyDivision || 'default'
+          const key = `${divKey}_${w.attributionYearMonth}`
           let paymentMonth = w.paymentYearMonth
-          // 지급연월 없으면 귀속연월 +1 추정
           if (!paymentMonth && w.attributionYearMonth) {
             const [yr, mo] = w.attributionYearMonth.split('-').map(Number)
             const nextMo = mo === 12 ? 1 : mo + 1
@@ -382,7 +387,9 @@ export default function PayrollPage() {
             paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
           }
           groupMap.set(key, {
-            attributionMonth: key,
+            groupKey: key,
+            companyDivision: w.companyDivision || '',
+            attributionMonth: w.attributionYearMonth,
             paymentMonth,
             withholding: w,
             payroll: null,
@@ -398,8 +405,9 @@ export default function PayrollPage() {
           })
         }
       } else {
-        // 원천징수 없는 경우 fallback 단일 그룹
         groupMap.set('__fallback__', {
+          groupKey: '__fallback__',
+          companyDivision: '',
           attributionMonth: '',
           paymentMonth: '',
           withholding: null,
@@ -416,12 +424,17 @@ export default function PayrollPage() {
         })
       }
 
-      // 이체확인증 → 지급월로 그룹 매칭
+      // 이체확인증 → 사업장+지급월 기준 그룹 매칭
       for (const bank of rawBankList) {
         let matched = false
         if (bank.transferMonth) {
           for (const group of groupMap.values()) {
-            if (group.paymentMonth === bank.transferMonth) {
+            const monthMatches = group.paymentMonth === bank.transferMonth
+            const divisionMatches =
+              !bank.companyDivision ||
+              !group.companyDivision ||
+              bank.companyDivision === group.companyDivision
+            if (monthMatches && divisionMatches) {
               group.bankList.push(bank)
               matched = true
               break
@@ -434,49 +447,84 @@ export default function PayrollPage() {
         }
       }
 
-      // Phase 3: Excel → 그룹별 시트 선택 후 Claude 처리
+      // Phase 3: Excel → 사업장별 시트 매칭 후 Claude 처리
+      // 그룹의 귀속월 목록 (중복 제거) — 각 unique 월마다 Excel 처리 1회
+      const uniqueMonths = [
+        ...new Set(
+          Array.from(groupMap.values())
+            .map((g) => g.attributionMonth)
+            .filter((m) => m && m !== '__fallback__')
+        ),
+      ] as string[]
+      const monthsToProcess: (string | undefined)[] =
+        uniqueMonths.length > 0 ? uniqueMonths : [undefined]
+
       for (const excelFileItem of excelFiles) {
         const fileIndex = files.findIndex((f) => f.file === excelFileItem.file)
         setFiles((prev) => prev.map((f, idx) => idx === fileIndex ? { ...f, status: 'processing' } : f))
 
-        const groups = Array.from(groupMap.values())
         let excelCallCount = 0
 
-        for (const group of groups) {
+        for (const targetMonth of monthsToProcess) {
           if (excelCallCount > 0 || sortedNonExcel.length > 0) await delay(3000)
           excelCallCount++
-
-          const targetMonth = group.attributionMonth === '__fallback__' ? undefined : group.attributionMonth
 
           try {
             const result = await processFile(excelFileItem, targetMonth)
             const documents = result.isMultipleDocuments ? result.documents : [result]
+
             for (const doc of documents) {
               if (doc.documentType === 'payroll') {
-                group.payroll = {
-                  yearMonth: doc.fields.paymentYearMonth || '',
-                  paymentDate: doc.fields.paymentDate || '',
-                  employees: doc.fields.employees || [],
-                  totalNetPay: doc.fields.totalNetPay || 0,
+                const payrollDiv = doc.fields.companyDivision || ''
+                const payrollMonth = doc.fields.paymentYearMonth || ''
+
+                // 사업장 + 귀속월로 정확히 매칭
+                const exactKey = payrollDiv ? `${payrollDiv}_${payrollMonth}` : null
+                let targetGroup = exactKey ? groupMap.get(exactKey) : null
+
+                // 월만으로 fallback 매칭 (사업장 정보 없을 때)
+                if (!targetGroup && payrollMonth) {
+                  for (const group of groupMap.values()) {
+                    if (group.attributionMonth === payrollMonth && !group.payroll) {
+                      targetGroup = group
+                      break
+                    }
+                  }
                 }
-                if (group.attributionMonth === '__fallback__') {
-                  group.attributionMonth = group.payroll.yearMonth
+
+                // fallback 그룹
+                if (!targetGroup) {
+                  const fb = groupMap.get('__fallback__')
+                  if (fb) {
+                    targetGroup = fb
+                    if (payrollMonth) targetGroup.attributionMonth = payrollMonth
+                  }
+                }
+
+                if (targetGroup) {
+                  targetGroup.payroll = {
+                    companyDivision: payrollDiv,
+                    yearMonth: payrollMonth,
+                    paymentDate: doc.fields.paymentDate || '',
+                    employees: doc.fields.employees || [],
+                    totalNetPay: doc.fields.totalNetPay || 0,
+                  }
                 }
               }
             }
           } catch {
-            // 개별 시트 실패 시 다음 그룹 계속 진행
+            // 개별 시트 실패 시 다음 월 계속 진행
           }
         }
 
         setFiles((prev) => prev.map((f, idx) =>
           idx === fileIndex
-            ? { ...f, status: 'completed', documentType: groups.length > 1 ? `payroll (${groups.length}개월)` : 'payroll' }
+            ? { ...f, status: 'completed', documentType: monthsToProcess.length > 1 ? `payroll (${monthsToProcess.length}개월)` : 'payroll' }
             : f
         ))
       }
 
-      // Phase 4: 각 그룹 크로스체크 계산
+      // Phase 4: 크로스체크 계산
       const finalGroups: MonthGroup[] = []
       for (const group of groupMap.values()) {
         const payrollTotal =
@@ -528,7 +576,11 @@ export default function PayrollPage() {
         })
       }
 
-      finalGroups.sort((a, b) => a.attributionMonth.localeCompare(b.attributionMonth))
+      // 사업장 → 귀속월 순 정렬
+      finalGroups.sort((a, b) => {
+        const divCmp = a.companyDivision.localeCompare(b.companyDivision)
+        return divCmp !== 0 ? divCmp : a.attributionMonth.localeCompare(b.attributionMonth)
+      })
       setMonthGroups(finalGroups)
 
     } catch (err) {
@@ -550,8 +602,8 @@ export default function PayrollPage() {
 
   const formatNumber = (num: number) => new Intl.NumberFormat('ko-KR').format(num)
 
-  const toggleExpanded = (month: string) =>
-    setExpandedMonth((prev) => (prev === month ? null : month))
+  const toggleExpanded = (key: string) =>
+    setExpandedMonth((prev) => (prev === key ? null : key))
 
   const stats = {
     total: files.length,
@@ -567,9 +619,13 @@ export default function PayrollPage() {
     withholding: monthGroups.some((g) => g.withholding !== null),
   }
 
+  // 사업장이 2개 이상이면 컬럼 표시
+  const showDivisionColumn =
+    new Set(monthGroups.map((g) => g.companyDivision).filter(Boolean)).size > 1
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 transition-all duration-500">
-      <div className="max-w-5xl mx-auto py-12 px-4">
+      <div className="max-w-6xl mx-auto py-12 px-4">
         <div className="mb-6">
           <Link
             href="/"
@@ -592,7 +648,7 @@ export default function PayrollPage() {
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">급여 검증</h1>
           <p className="text-gray-600">
-            급여대장, 원천징수신고서, 통장내역을 업로드하면 월별로 자동 크로스체크합니다
+            급여대장, 원천징수신고서, 통장내역을 업로드하면 사업장별·월별로 자동 크로스체크합니다
           </p>
         </div>
 
@@ -622,7 +678,7 @@ export default function PayrollPage() {
               </div>
               <p className="text-gray-600 font-medium">급여 관련 파일을 드래그하거나 클릭하여 업로드</p>
               <p className="text-sm text-gray-400 mt-1">
-                급여대장(Excel/PDF), 원천징수신고서, 이체확인증 (여러 파일, 여러 달 가능)
+                급여대장(Excel/PDF), 원천징수신고서, 이체확인증 — 여러 사업장·여러 달 가능
               </p>
             </label>
           </div>
@@ -638,11 +694,7 @@ export default function PayrollPage() {
                   <span className="text-green-600">완료: {stats.completed}</span>
                   <span className="text-red-600">오류: {stats.error}</span>
                 </div>
-                <button
-                  onClick={clearAll}
-                  disabled={isProcessing}
-                  className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
-                >
+                <button onClick={clearAll} disabled={isProcessing} className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50">
                   전체 삭제
                 </button>
               </div>
@@ -673,9 +725,7 @@ export default function PayrollPage() {
                       {fileItem.status === 'error' && <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white text-xs flex-shrink-0">X</span>}
                       <span className="truncate">{fileItem.file.name}</span>
                       {fileItem.documentType && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs flex-shrink-0">
-                          {fileItem.documentType}
-                        </span>
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs flex-shrink-0">{fileItem.documentType}</span>
                       )}
                       {fileItem.error && <span className="text-red-600 text-xs">{fileItem.error}</span>}
                     </div>
@@ -705,7 +755,7 @@ export default function PayrollPage() {
             </button>
           )}
 
-          {/* 에러 메시지 */}
+          {/* 에러 */}
           {error && (
             <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">{error}</div>
           )}
@@ -738,6 +788,9 @@ export default function PayrollPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
+                      {showDivisionColumn && (
+                        <th className="text-left py-3 px-4 font-medium text-gray-500">사업장</th>
+                      )}
                       <th className="text-left py-3 px-4 font-medium text-gray-500">귀속월</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-500">급여대장</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-500">원천징수</th>
@@ -749,17 +802,23 @@ export default function PayrollPage() {
                   </thead>
                   <tbody>
                     {monthGroups.flatMap((group) => {
-                      const isExpanded = expandedMonth === group.attributionMonth
+                      const isExpanded = expandedMonth === group.groupKey
                       const hasIndividual = group.individualMatches.length > 0
+                      const colSpan = showDivisionColumn ? 8 : 7
 
                       const mainRow = (
                         <tr
-                          key={group.attributionMonth}
-                          onClick={() => hasIndividual && toggleExpanded(group.attributionMonth)}
+                          key={group.groupKey}
+                          onClick={() => hasIndividual && toggleExpanded(group.groupKey)}
                           className={`border-b border-gray-100 transition-colors
                             ${hasIndividual ? 'cursor-pointer hover:bg-gray-50' : ''}
                             ${!group.isMatched ? 'bg-red-50/40' : ''}`}
                         >
+                          {showDivisionColumn && (
+                            <td className="py-3 px-4 font-medium text-purple-700">
+                              {group.companyDivision || '-'}
+                            </td>
+                          )}
                           <td className="py-3 px-4 font-medium">
                             <div className="flex items-center gap-1.5">
                               <span>{group.attributionMonth || '-'}</span>
@@ -810,11 +869,11 @@ export default function PayrollPage() {
                       if (!isExpanded || !hasIndividual) return [mainRow]
 
                       const expandedRow = (
-                        <tr key={`expanded-${group.attributionMonth}`}>
-                          <td colSpan={7} className="p-0 border-b border-gray-200">
+                        <tr key={`expanded-${group.groupKey}`}>
+                          <td colSpan={colSpan} className="p-0 border-b border-gray-200">
                             <div className="bg-gray-50/80 px-6 py-4">
                               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                                개인별 매칭 — {group.attributionMonth}
+                                개인별 매칭 — {group.companyDivision ? `${group.companyDivision} ` : ''}{group.attributionMonth}
                               </p>
                               <table className="w-full text-sm">
                                 <thead>
@@ -875,7 +934,7 @@ export default function PayrollPage() {
             ))}
           </div>
           <p className="mt-3 text-gray-500 text-sm">
-            여러 달치 파일을 한 번에 업로드하면 월별로 자동 그룹핑합니다.
+            여러 사업장·여러 달치 파일을 한 번에 업로드하면 자동으로 그룹핑합니다.
           </p>
         </div>
       </div>

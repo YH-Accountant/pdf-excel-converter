@@ -187,7 +187,7 @@ export const documentTemplates: Record<DocumentType, {
 
   bankStatement: {
     label: '통장 입출금내역',
-    fields: ['transactionDate', 'deposit', 'withdrawal', 'balance', 'transactionContent', 'counterparty', 'transactions', 'totalWithdrawal'],
+    fields: ['companyDivision', 'transactionDate', 'deposit', 'withdrawal', 'balance', 'transactionContent', 'counterparty', 'transactions', 'totalWithdrawal'],
     prompt: `당신은 통장 입출금내역/이체확인증 분석 전문가입니다. 아래 문서에서 핵심 정보를 정확하게 추출해주세요.
 
 [문서 유형]
@@ -195,6 +195,11 @@ export const documentTemplates: Record<DocumentType, {
 - 거래내역조회: 개별 거래 내역이 나열됨
 
 [추출 규칙]
+0. companyDivision (사업장명/공장명)
+   - 이체확인증에 기재된 사업장 구분명 (있는 경우)
+   - 예: "둔포공장", "용인공장"
+   - 없으면 null
+
 1. transactionDate (거래일)
    - YYYY-MM-DD 형식
 
@@ -310,10 +315,16 @@ export const documentTemplates: Record<DocumentType, {
 
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
-    fields: ['attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
+    fields: ['companyDivision', 'attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
     prompt: `당신은 원천징수이행상황신고서 분석 전문가입니다. 아래 신고서에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
+0. companyDivision (사업장명/공장명)
+   - 신고서에 기재된 사업장 구분명 (공장명, 지점명 등)
+   - 전체 회사명이 아닌 사업장 구분명만 추출
+   - 예: "둔포공장", "용인공장", "본사", "서울지점"
+   - 사업장 구분이 없으면 회사명 전체 기재
+
 1. attributionYearMonth (귀속년월)
    - YYYY-MM 형식
    - 급여가 귀속되는 월 (급여 발생 월)
@@ -395,10 +406,15 @@ export const documentTemplates: Record<DocumentType, {
 
   payroll: {
     label: '급여대장',
-    fields: ['paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay'],
+    fields: ['companyDivision', 'paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay'],
     prompt: `당신은 급여대장 분석 전문가입니다. 아래 급여대장(더존 등 회계프로그램 출력물)에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
+0. companyDivision (사업장명/공장명)
+   - 급여대장에 기재된 사업장 또는 공장 구분명
+   - 예: "둔포공장", "용인공장", "본사"
+   - 명시되지 않으면 companyName과 동일하게 기재
+
 1. paymentYearMonth (귀속년월)
    - YYYY-MM 형식
    - 예: "2025-01"
