@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import * as pdfjsLib from 'pdfjs-dist'
+import XLSX from 'xlsx-js-style'
 
 interface PayrollEmployee {
   name: string
@@ -171,9 +172,35 @@ export default function PayrollPage() {
       'image/jpg',
       'image/gif',
       'image/webp',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ]
-    return validTypes.includes(file.type)
+    const name = file.name.toLowerCase()
+    return validTypes.includes(file.type) || name.endsWith('.xls') || name.endsWith('.xlsx')
   }
+
+  // Excel 파일을 CSV 텍스트로 변환
+  const readExcelAsText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result
+          const wb = XLSX.read(data, { type: 'array' })
+          let text = ''
+          wb.SheetNames.forEach((sheetName) => {
+            const ws = wb.Sheets[sheetName]
+            const csv = XLSX.utils.sheet_to_csv(ws)
+            text += `[시트: ${sheetName}]\n${csv}\n\n`
+          })
+          resolve(text)
+        } catch (err) {
+          reject(err)
+        }
+      }
+      reader.onerror = reject
+      reader.readAsArrayBuffer(file)
+    })
 
   // 파일 드롭 핸들러
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -237,6 +264,17 @@ export default function PayrollPage() {
           formData.append('fileCount', images.length.toString())
         }
       }
+    } else if (
+      fileItem.file.type === 'application/vnd.ms-excel' ||
+      fileItem.file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      fileItem.file.name.toLowerCase().endsWith('.xls') ||
+      fileItem.file.name.toLowerCase().endsWith('.xlsx')
+    ) {
+      // Excel 파일 → 텍스트 변환 후 Claude에 전달
+      const text = await readExcelAsText(fileItem.file)
+      formData.append('pdfText', text)
+      formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+      formData.append('fileCount', '1')
     } else if (fileItem.file.type.startsWith('image/')) {
       // 이미지 처리 - OCR 먼저 시도
       const imageData = await convertImageToBase64(fileItem.file)
@@ -503,7 +541,7 @@ export default function PayrollPage() {
           >
             <input
               type="file"
-              accept=".pdf,image/*"
+              accept=".pdf,image/*,.xls,.xlsx"
               onChange={handleFileInput}
               className="hidden"
               id="payroll-file-upload"
@@ -520,7 +558,7 @@ export default function PayrollPage() {
                 급여 관련 파일을 드래그하거나 클릭하여 업로드
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                급여대장, 원천징수신고서, 통장내역이 포함된 PDF (여러 파일 가능)
+                급여대장(Excel/PDF), 원천징수신고서, 통장내역 (여러 파일 가능)
               </p>
             </label>
           </div>
