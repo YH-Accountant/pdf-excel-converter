@@ -7,14 +7,14 @@ import XLSX from 'xlsx-js-style'
 
 interface PayrollEmployee {
   name: string
-  netPay: number  // 실지급액
+  netPay: number
 }
 
 interface BankTransaction {
   date: string
-  description: string  // 적요
-  withdrawal: number   // 출금액
-  matchedEmployee?: string  // 매칭된 직원명
+  description: string
+  withdrawal: number
+  matchedEmployee?: string
 }
 
 interface PayrollData {
@@ -27,10 +27,13 @@ interface PayrollData {
 interface BankData {
   transactions: BankTransaction[]
   totalWithdrawal: number
+  transferDate?: string
+  transferMonth?: string
 }
 
 interface WithholdingData {
   attributionYearMonth: string
+  paymentYearMonth: string
   numberOfPeople: number
   totalPayment: number
   incomeTax: number
@@ -45,12 +48,19 @@ interface MatchResult {
   isMatched: boolean
 }
 
-interface VerificationResult {
+interface MonthGroup {
+  attributionMonth: string
+  paymentMonth: string
+  withholding: WithholdingData | null
+  payroll: PayrollData | null
+  bankList: BankData[]
   payrollTotal: number
   bankTotal: number
-  withholdingTotal: number | null
+  withholdingTotal: number
   difference: number
   isMatched: boolean
+  attributionMonthMatched: boolean
+  paymentMonthMatched: boolean
   individualMatches: MatchResult[]
 }
 
@@ -65,24 +75,18 @@ interface ProcessingFile {
 export default function PayrollPage() {
   const [files, setFiles] = useState<ProcessingFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
-  const [payrollData, setPayrollData] = useState<PayrollData | null>(null)
-  const [bankData, setBankData] = useState<BankData | null>(null)
-  const [withholdingData, setWithholdingData] = useState<WithholdingData | null>(null)
-  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null)
+  const [monthGroups, setMonthGroups] = useState<MonthGroup[]>([])
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isPdfReady, setIsPdfReady] = useState(false)
   const initialized = useRef(false)
 
-  // PDF.js 초기화
   useEffect(() => {
     if (!initialized.current && typeof window !== 'undefined') {
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs`
       initialized.current = true
-      setIsPdfReady(true)
     }
   }, [])
 
-  // PDF에서 텍스트 추출
   const extractTextFromPdf = async (pdfFile: File): Promise<string> => {
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({
@@ -92,86 +96,61 @@ export default function PayrollPage() {
       useSystemFonts: true,
       standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/standard_fonts/',
     }).promise
-
     let fullText = ''
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const textContent = await page.getTextContent()
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ')
+      const pageText = textContent.items.map((item: any) => item.str).join(' ')
       fullText += `[페이지 ${i}]\n${pageText}\n\n`
     }
     return fullText
   }
 
-  // PDF를 이미지로 변환
   const convertPdfToBase64Images = async (pdfFile: File): Promise<{ base64: string; mediaType: string }[]> => {
     const arrayBuffer = await pdfFile.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     const images: { base64: string; mediaType: string }[] = []
-
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const scale = 3
       const viewport = page.getViewport({ scale })
-
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')!
       canvas.height = viewport.height
       canvas.width = viewport.width
-
-      await page.render({
-        canvasContext: context,
-        viewport: viewport,
-      }).promise
-
-      const base64 = canvas.toDataURL('image/png').split(',')[1]
-      images.push({ base64, mediaType: 'image/png' })
+      await page.render({ canvasContext: context, viewport }).promise
+      images.push({ base64: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png' })
     }
-
     return images
   }
 
-  // 이미지 파일을 base64로 변환
   const convertImageToBase64 = async (imageFile: File): Promise<{ base64: string; mediaType: string }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
         const result = reader.result as string
-        const base64 = result.split(',')[1]
-        resolve({ base64, mediaType: imageFile.type })
+        resolve({ base64: result.split(',')[1], mediaType: imageFile.type })
       }
       reader.onerror = reject
       reader.readAsDataURL(imageFile)
     })
   }
 
-  // Google Vision OCR 호출
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
     const response = await fetch('/api/ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images, useDocumentMode: true }),
     })
-
-    if (!response.ok) {
-      throw new Error('OCR 처리 실패')
-    }
-
+    if (!response.ok) throw new Error('OCR 처리 실패')
     const data = await response.json()
     return data.text
   }
 
-  // 지원하는 파일 형식 체크
   const isValidFile = (file: File): boolean => {
     const validTypes = [
       'application/pdf',
-      'image/png',
-      'image/jpeg',
-      'image/jpg',
-      'image/gif',
-      'image/webp',
+      'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ]
@@ -179,20 +158,55 @@ export default function PayrollPage() {
     return validTypes.includes(file.type) || name.endsWith('.xls') || name.endsWith('.xlsx')
   }
 
-  // Excel 파일을 CSV 텍스트로 변환
-  const readExcelAsText = (file: File): Promise<string> =>
+  const isExcelFile = (f: ProcessingFile): boolean => {
+    const name = f.file.name.toLowerCase()
+    return (
+      f.file.type === 'application/vnd.ms-excel' ||
+      f.file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      name.endsWith('.xls') ||
+      name.endsWith('.xlsx')
+    )
+  }
+
+  const readExcelAsText = (file: File, targetAttributionYearMonth?: string): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = (e) => {
         try {
           const data = e.target?.result
           const wb = XLSX.read(data, { type: 'array' })
-          let text = ''
-          wb.SheetNames.forEach((sheetName) => {
+          const MAX_CHARS = 20000
+          const sheetNames = wb.SheetNames
+
+          const sheetMeta = sheetNames.map((sheetName) => {
             const ws = wb.Sheets[sheetName]
-            const csv = XLSX.utils.sheet_to_csv(ws)
-            text += `[시트: ${sheetName}]\n${csv}\n\n`
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]
+            const headerText = rows.slice(0, 5).flat().filter(Boolean).join(' ')
+            const attrMatch = headerText.match(/귀속[^0-9]*(\d{4})년\s*(\d{1,2})월/)
+            const payMatch = headerText.match(/지급[^0-9]*(\d{4})년\s*(\d{1,2})월/)
+            return {
+              sheetName,
+              attributionYearMonth: attrMatch ? `${attrMatch[1]}-${attrMatch[2].padStart(2, '0')}` : '',
+              paymentYearMonth: payMatch ? `${payMatch[1]}-${payMatch[2].padStart(2, '0')}` : '',
+            }
           })
+
+          let selectedMeta = sheetMeta[sheetMeta.length - 1]
+          if (targetAttributionYearMonth) {
+            const match = sheetMeta.find((m) => m.attributionYearMonth === targetAttributionYearMonth)
+            if (match) selectedMeta = match
+          }
+
+          const ws = wb.Sheets[selectedMeta.sheetName]
+          const csv = XLSX.utils.sheet_to_csv(ws)
+          const metaSummary = sheetMeta.map((m) => `${m.sheetName}(귀속${m.attributionYearMonth || '?'})`).join(', ')
+
+          let text =
+            `[전체 시트: ${metaSummary}]\n` +
+            `[선택된 시트: ${selectedMeta.sheetName} / 귀속: ${selectedMeta.attributionYearMonth || '?'} / 지급: ${selectedMeta.paymentYearMonth || '?'}]\n\n` +
+            `[시트: ${selectedMeta.sheetName}]\n${csv}\n\n`
+
+          if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS) + '\n...(이하 생략)'
           resolve(text)
         } catch (err) {
           reject(err)
@@ -202,35 +216,23 @@ export default function PayrollPage() {
       reader.readAsArrayBuffer(file)
     })
 
-  // 파일 드롭 핸들러
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const droppedFiles = Array.from(e.dataTransfer.files).filter(isValidFile)
-    const newFiles: ProcessingFile[] = droppedFiles.map((file) => ({
-      file,
-      status: 'pending',
-    }))
-    setFiles((prev) => [...prev, ...newFiles])
+    setFiles((prev) => [...prev, ...droppedFiles.map((file) => ({ file, status: 'pending' as const }))])
   }, [])
 
-  // 파일 선택 핸들러
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const selectedFiles = Array.from(e.target.files).filter(isValidFile)
-      const newFiles: ProcessingFile[] = selectedFiles.map((file) => ({
-        file,
-        status: 'pending',
-      }))
-      setFiles((prev) => [...prev, ...newFiles])
+      setFiles((prev) => [...prev, ...selectedFiles.map((file) => ({ file, status: 'pending' as const }))])
     }
   }
 
-  // 파일 처리 (문서 유형 자동 감지)
-  const processFile = async (fileItem: ProcessingFile): Promise<any> => {
+  const processFile = async (fileItem: ProcessingFile, targetAttributionYearMonth?: string): Promise<any> => {
     const formData = new FormData()
 
     if (fileItem.file.type === 'application/pdf') {
-      // PDF 처리
       const text = await extractTextFromPdf(fileItem.file)
       const contentOnly = text.replace(/\[페이지 \d+\]\s*/g, '').trim()
       const contentLength = contentOnly.replace(/\s/g, '').length
@@ -240,46 +242,32 @@ export default function PayrollPage() {
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')
       } else {
-        // 스캔 PDF - OCR 사용
         const images = await convertPdfToBase64Images(fileItem.file)
         const ocrText = await callGoogleOcr(images)
-
         if (ocrText && ocrText.length > 50) {
           formData.append('pdfText', ocrText)
           formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
           formData.append('fileCount', '1')
         } else {
-          // Claude Vision 사용
           for (let idx = 0; idx < images.length; idx++) {
             const img = images[idx]
             const binary = atob(img.base64)
             const array = new Uint8Array(binary.length)
-            for (let j = 0; j < binary.length; j++) {
-              array[j] = binary.charCodeAt(j)
-            }
+            for (let j = 0; j < binary.length; j++) array[j] = binary.charCodeAt(j)
             const blob = new Blob([array], { type: 'image/png' })
-            const imgFile = new File([blob], fileItem.file.name.replace('.pdf', `_page${idx + 1}.png`), { type: 'image/png' })
-            formData.append(`file${idx}`, imgFile)
+            formData.append(`file${idx}`, new File([blob], fileItem.file.name.replace('.pdf', `_page${idx + 1}.png`), { type: 'image/png' }))
           }
           formData.append('fileCount', images.length.toString())
         }
       }
-    } else if (
-      fileItem.file.type === 'application/vnd.ms-excel' ||
-      fileItem.file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      fileItem.file.name.toLowerCase().endsWith('.xls') ||
-      fileItem.file.name.toLowerCase().endsWith('.xlsx')
-    ) {
-      // Excel 파일 → 텍스트 변환 후 Claude에 전달
-      const text = await readExcelAsText(fileItem.file)
+    } else if (isExcelFile(fileItem)) {
+      const text = await readExcelAsText(fileItem.file, targetAttributionYearMonth)
       formData.append('pdfText', text)
       formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
       formData.append('fileCount', '1')
     } else if (fileItem.file.type.startsWith('image/')) {
-      // 이미지 처리 - OCR 먼저 시도
       const imageData = await convertImageToBase64(fileItem.file)
       const ocrText = await callGoogleOcr([imageData])
-
       if (ocrText && ocrText.length > 50) {
         formData.append('pdfText', ocrText)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
@@ -290,72 +278,59 @@ export default function PayrollPage() {
       }
     }
 
-    // 문서 유형 자동 감지 (지정하지 않음)
-    const response = await fetch('/api/extract', {
-      method: 'POST',
-      body: formData,
-    })
-
+    const response = await fetch('/api/extract', { method: 'POST', body: formData })
     if (!response.ok) {
       const errorData = await response.json()
       throw new Error(errorData.error || '추출 실패')
     }
-
     return response.json()
   }
 
-  // 크로스체크 실행
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
   const runCrossCheck = async () => {
-    if (files.length === 0) {
-      setError('파일을 업로드해주세요.')
-      return
-    }
+    if (files.length === 0) { setError('파일을 업로드해주세요.'); return }
 
     setIsProcessing(true)
     setError(null)
-    setVerificationResult(null)
-    setPayrollData(null)
-    setBankData(null)
-    setWithholdingData(null)
+    setMonthGroups([])
+    setExpandedMonth(null)
 
     const pendingFiles = files.filter((f) => f.status === 'pending')
-    let payroll: PayrollData | null = null
-    let bank: BankData | null = null
-    let withholding: WithholdingData | null = null
+    const excelFiles = pendingFiles.filter(isExcelFile)
+    const nonExcelFiles = pendingFiles.filter((f) => !isExcelFile(f))
+
+    // 원천징수 먼저 처리하도록 정렬
+    const sortedNonExcel = [...nonExcelFiles].sort((a, b) =>
+      (a.file.name.toLowerCase().includes('원천') ? 0 : 1) -
+      (b.file.name.toLowerCase().includes('원천') ? 0 : 1)
+    )
+
+    const withholdingList: WithholdingData[] = []
+    const rawBankList: BankData[] = []
 
     try {
-      // 각 파일 처리
-      for (let i = 0; i < pendingFiles.length; i++) {
-        const fileItem = pendingFiles[i]
+      // Phase 1: PDF/이미지 처리
+      for (let i = 0; i < sortedNonExcel.length; i++) {
+        const fileItem = sortedNonExcel[i]
         const fileIndex = files.findIndex((f) => f.file === fileItem.file)
-
-        // 상태 업데이트: processing
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === fileIndex ? { ...f, status: 'processing' } : f
-          )
-        )
+        setFiles((prev) => prev.map((f, idx) => idx === fileIndex ? { ...f, status: 'processing' } : f))
 
         try {
           const result = await processFile(fileItem)
-          console.log('처리 결과:', result)
-
-          // 다중 문서 응답 처리
           const documents = result.isMultipleDocuments ? result.documents : [result]
 
           for (const doc of documents) {
-            const docType = doc.documentType
-            console.log(`감지된 문서 유형: ${docType}`)
-
-            if (docType === 'payroll') {
-              payroll = {
-                yearMonth: doc.fields.paymentYearMonth || '',
-                paymentDate: doc.fields.paymentDate || '',
-                employees: doc.fields.employees || [],
-                totalNetPay: doc.fields.totalNetPay || 0,
-              }
-            } else if (docType === 'bankStatement') {
-              // 통장내역에서 totalWithdrawal 파싱
+            if (doc.documentType === 'withholdingTax') {
+              withholdingList.push({
+                attributionYearMonth: doc.fields.attributionYearMonth || '',
+                paymentYearMonth: doc.fields.paymentYearMonth || '',
+                numberOfPeople: doc.fields.numberOfPeople || 0,
+                totalPayment: doc.fields.totalPayment || 0,
+                incomeTax: doc.fields.incomeTax || 0,
+                localIncomeTax: doc.fields.localIncomeTax || 0,
+              })
+            } else if (doc.documentType === 'bankStatement') {
               let totalWithdrawal = 0
               if (doc.fields.totalWithdrawal) {
                 totalWithdrawal = typeof doc.fields.totalWithdrawal === 'number'
@@ -366,94 +341,195 @@ export default function PayrollPage() {
                   ? doc.fields.withdrawal
                   : parseInt(String(doc.fields.withdrawal).replace(/,/g, '')) || 0
               }
-
-              // transactions 배열 파싱
-              const transactions = doc.fields.transactions || []
-
-              bank = {
-                transactions: transactions,
-                totalWithdrawal: totalWithdrawal,
-              }
-            } else if (docType === 'withholdingTax') {
-              withholding = {
-                attributionYearMonth: doc.fields.attributionYearMonth || '',
-                numberOfPeople: doc.fields.numberOfPeople || 0,
-                totalPayment: doc.fields.totalPayment || 0,
-                incomeTax: doc.fields.incomeTax || 0,
-                localIncomeTax: doc.fields.localIncomeTax || 0,
-              }
+              const transferDateRaw = doc.fields.transactionDate || doc.fields.transferDate || ''
+              const transferMonthMatch = String(transferDateRaw).match(/(\d{4})-(\d{2})/)
+              const transferMonth = transferMonthMatch ? `${transferMonthMatch[1]}-${transferMonthMatch[2]}` : ''
+              rawBankList.push({
+                transactions: doc.fields.transactions || [],
+                totalWithdrawal,
+                transferDate: String(transferDateRaw),
+                transferMonth,
+              })
             }
           }
 
-          // 상태 업데이트: completed
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === fileIndex ? { ...f, status: 'completed', result, documentType: documents.map((d: any) => d.documentType).join(', ') } : f
-            )
-          )
+          setFiles((prev) => prev.map((f, idx) =>
+            idx === fileIndex
+              ? { ...f, status: 'completed', result, documentType: documents.map((d: any) => d.documentType).join(', ') }
+              : f
+          ))
         } catch (err) {
-          // 상태 업데이트: error
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === fileIndex ? { ...f, status: 'error', error: (err as Error).message } : f
-            )
-          )
+          setFiles((prev) => prev.map((f, idx) =>
+            idx === fileIndex ? { ...f, status: 'error', error: (err as Error).message } : f
+          ))
         }
 
-        // API 속도 제한을 위한 딜레이
-        if (i < pendingFiles.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000))
+        if (i < sortedNonExcel.length - 1) await delay(3000)
+      }
+
+      // Phase 2: 월별 그룹 구성 (원천징수 귀속월 기준)
+      const groupMap = new Map<string, MonthGroup>()
+
+      if (withholdingList.length > 0) {
+        for (const w of withholdingList) {
+          const key = w.attributionYearMonth || `unknown-${groupMap.size}`
+          let paymentMonth = w.paymentYearMonth
+          // 지급연월 없으면 귀속연월 +1 추정
+          if (!paymentMonth && w.attributionYearMonth) {
+            const [yr, mo] = w.attributionYearMonth.split('-').map(Number)
+            const nextMo = mo === 12 ? 1 : mo + 1
+            const nextYr = mo === 12 ? yr + 1 : yr
+            paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
+          }
+          groupMap.set(key, {
+            attributionMonth: key,
+            paymentMonth,
+            withholding: w,
+            payroll: null,
+            bankList: [],
+            payrollTotal: 0,
+            bankTotal: 0,
+            withholdingTotal: w.totalPayment || 0,
+            difference: 0,
+            isMatched: false,
+            attributionMonthMatched: false,
+            paymentMonthMatched: false,
+            individualMatches: [],
+          })
+        }
+      } else {
+        // 원천징수 없는 경우 fallback 단일 그룹
+        groupMap.set('__fallback__', {
+          attributionMonth: '',
+          paymentMonth: '',
+          withholding: null,
+          payroll: null,
+          bankList: [],
+          payrollTotal: 0,
+          bankTotal: 0,
+          withholdingTotal: 0,
+          difference: 0,
+          isMatched: false,
+          attributionMonthMatched: false,
+          paymentMonthMatched: false,
+          individualMatches: [],
+        })
+      }
+
+      // 이체확인증 → 지급월로 그룹 매칭
+      for (const bank of rawBankList) {
+        let matched = false
+        if (bank.transferMonth) {
+          for (const group of groupMap.values()) {
+            if (group.paymentMonth === bank.transferMonth) {
+              group.bankList.push(bank)
+              matched = true
+              break
+            }
+          }
+        }
+        if (!matched) {
+          const firstGroup = groupMap.values().next().value
+          if (firstGroup) firstGroup.bankList.push(bank)
         }
       }
 
-      // 결과 저장
-      setPayrollData(payroll)
-      setBankData(bank)
-      setWithholdingData(withholding)
+      // Phase 3: Excel → 그룹별 시트 선택 후 Claude 처리
+      for (const excelFileItem of excelFiles) {
+        const fileIndex = files.findIndex((f) => f.file === excelFileItem.file)
+        setFiles((prev) => prev.map((f, idx) => idx === fileIndex ? { ...f, status: 'processing' } : f))
 
-      // 크로스체크 수행
-      if (payroll || bank) {
-        const totalPayroll = payroll?.totalNetPay ||
-          (payroll?.employees?.reduce((sum, emp) => sum + (emp.netPay || 0), 0) || 0)
+        const groups = Array.from(groupMap.values())
+        let excelCallCount = 0
 
-        const totalBank = typeof bank?.totalWithdrawal === 'number'
-          ? bank.totalWithdrawal
-          : parseInt(String(bank?.totalWithdrawal || '0').replace(/,/g, '')) || 0
+        for (const group of groups) {
+          if (excelCallCount > 0 || sortedNonExcel.length > 0) await delay(3000)
+          excelCallCount++
 
-        const difference = totalPayroll - totalBank
-        const isMatched = Math.abs(difference) < 100  // 100원 미만 차이는 일치로 처리
+          const targetMonth = group.attributionMonth === '__fallback__' ? undefined : group.attributionMonth
 
-        // 개인별 매칭 (통장 적요에 이름이 있는 경우)
+          try {
+            const result = await processFile(excelFileItem, targetMonth)
+            const documents = result.isMultipleDocuments ? result.documents : [result]
+            for (const doc of documents) {
+              if (doc.documentType === 'payroll') {
+                group.payroll = {
+                  yearMonth: doc.fields.paymentYearMonth || '',
+                  paymentDate: doc.fields.paymentDate || '',
+                  employees: doc.fields.employees || [],
+                  totalNetPay: doc.fields.totalNetPay || 0,
+                }
+                if (group.attributionMonth === '__fallback__') {
+                  group.attributionMonth = group.payroll.yearMonth
+                }
+              }
+            }
+          } catch {
+            // 개별 시트 실패 시 다음 그룹 계속 진행
+          }
+        }
+
+        setFiles((prev) => prev.map((f, idx) =>
+          idx === fileIndex
+            ? { ...f, status: 'completed', documentType: groups.length > 1 ? `payroll (${groups.length}개월)` : 'payroll' }
+            : f
+        ))
+      }
+
+      // Phase 4: 각 그룹 크로스체크 계산
+      const finalGroups: MonthGroup[] = []
+      for (const group of groupMap.values()) {
+        const payrollTotal =
+          group.payroll?.totalNetPay ||
+          group.payroll?.employees?.reduce((sum, e) => sum + (e.netPay || 0), 0) ||
+          0
+        const bankTotal = group.bankList.reduce((sum, b) => sum + b.totalWithdrawal, 0)
+        const difference = payrollTotal - bankTotal
+        const isMatched = Math.abs(difference) < 100
+
+        const attributionMonthMatched =
+          !!group.payroll?.yearMonth &&
+          group.payroll.yearMonth === group.withholding?.attributionYearMonth
+
+        const bankTransferMonths = group.bankList.map((b) => b.transferMonth || '').filter(Boolean)
+        const paymentMonthMatched =
+          bankTransferMonths.length > 0 &&
+          !!group.paymentMonth &&
+          bankTransferMonths.every((m) => m === group.paymentMonth)
+
         const individualMatches: MatchResult[] = []
-
-        if (payroll?.employees && payroll.employees.length > 0) {
-          for (const emp of payroll.employees) {
-            // 통장 내역에서 해당 직원명이 포함된 거래 찾기
-            const matchedTx = bank?.transactions?.find((tx: any) =>
-              tx.description?.includes(emp.name) || emp.name?.includes(tx.description)
+        if (group.payroll?.employees && group.payroll.employees.length > 0) {
+          for (const emp of group.payroll.employees) {
+            const allTx = group.bankList.flatMap((b) => b.transactions)
+            const matchedTx = allTx.find(
+              (tx: any) => tx.description?.includes(emp.name) || emp.name?.includes(tx.description)
             )
-
             const bankAmount = matchedTx?.withdrawal || 0
-
             individualMatches.push({
               name: emp.name,
               payrollAmount: emp.netPay,
-              bankAmount: bankAmount,
+              bankAmount,
               difference: emp.netPay - bankAmount,
               isMatched: bankAmount > 0 ? Math.abs(emp.netPay - bankAmount) < 100 : false,
             })
           }
         }
 
-        setVerificationResult({
-          payrollTotal: totalPayroll,
-          bankTotal: totalBank,
-          withholdingTotal: withholding?.totalPayment || null,
+        finalGroups.push({
+          ...group,
+          payrollTotal,
+          bankTotal,
+          withholdingTotal: group.withholding?.totalPayment || 0,
           difference,
           isMatched,
+          attributionMonthMatched,
+          paymentMonthMatched,
           individualMatches,
         })
       }
+
+      finalGroups.sort((a, b) => a.attributionMonth.localeCompare(b.attributionMonth))
+      setMonthGroups(finalGroups)
 
     } catch (err) {
       console.error('크로스체크 오류:', err)
@@ -463,25 +539,19 @@ export default function PayrollPage() {
     }
   }
 
-  // 파일 삭제
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index))
-  }
+  const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index))
 
-  // 전체 삭제
   const clearAll = () => {
     setFiles([])
-    setVerificationResult(null)
-    setPayrollData(null)
-    setBankData(null)
-    setWithholdingData(null)
+    setMonthGroups([])
+    setExpandedMonth(null)
     setError(null)
   }
 
-  // 숫자 포맷팅
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('ko-KR').format(num)
-  }
+  const formatNumber = (num: number) => new Intl.NumberFormat('ko-KR').format(num)
+
+  const toggleExpanded = (month: string) =>
+    setExpandedMonth((prev) => (prev === month ? null : month))
 
   const stats = {
     total: files.length,
@@ -491,17 +561,15 @@ export default function PayrollPage() {
     error: files.filter((f) => f.status === 'error').length,
   }
 
-  // 감지된 문서 유형 목록
   const detectedTypes = {
-    payroll: payrollData !== null,
-    bank: bankData !== null,
-    withholding: withholdingData !== null,
+    payroll: monthGroups.some((g) => g.payroll !== null),
+    bank: monthGroups.some((g) => g.bankList.length > 0),
+    withholding: monthGroups.some((g) => g.withholding !== null),
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 transition-all duration-500">
       <div className="max-w-5xl mx-auto py-12 px-4">
-        {/* 헤더 */}
         <div className="mb-6">
           <Link
             href="/"
@@ -522,16 +590,14 @@ export default function PayrollPage() {
               </svg>
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            급여 검증
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">급여 검증</h1>
           <p className="text-gray-600">
-            급여대장, 원천징수신고서, 통장내역이 포함된 PDF를 업로드하면 자동으로 크로스체크합니다
+            급여대장, 원천징수신고서, 통장내역을 업로드하면 월별로 자동 크로스체크합니다
           </p>
         </div>
 
         <div className="bg-white/80 backdrop-blur-sm border border-white/50 shadow-lg rounded-2xl p-6 space-y-6">
-          {/* 파일 업로드 영역 */}
+          {/* 파일 업로드 */}
           <div
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
@@ -554,11 +620,9 @@ export default function PayrollPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <p className="text-gray-600 font-medium">
-                급여 관련 파일을 드래그하거나 클릭하여 업로드
-              </p>
+              <p className="text-gray-600 font-medium">급여 관련 파일을 드래그하거나 클릭하여 업로드</p>
               <p className="text-sm text-gray-400 mt-1">
-                급여대장(Excel/PDF), 원천징수신고서, 통장내역 (여러 파일 가능)
+                급여대장(Excel/PDF), 원천징수신고서, 이체확인증 (여러 파일, 여러 달 가능)
               </p>
             </label>
           </div>
@@ -583,14 +647,11 @@ export default function PayrollPage() {
                 </button>
               </div>
 
-              {/* 진행바 */}
               {isProcessing && (
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${((stats.completed + stats.error) / stats.total) * 100}%`,
-                    }}
+                    style={{ width: `${((stats.completed + stats.error) / stats.total) * 100}%` }}
                   />
                 </div>
               )}
@@ -606,38 +667,20 @@ export default function PayrollPage() {
                       ${fileItem.status === 'error' ? 'bg-red-50' : ''}`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {/* 상태 아이콘 */}
-                      {fileItem.status === 'pending' && (
-                        <span className="w-5 h-5 rounded-full bg-gray-300" />
-                      )}
-                      {fileItem.status === 'processing' && (
-                        <span className="w-5 h-5 rounded-full border-2 border-purple-600 border-t-transparent animate-spin" />
-                      )}
-                      {fileItem.status === 'completed' && (
-                        <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs">O</span>
-                      )}
-                      {fileItem.status === 'error' && (
-                        <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white text-xs">X</span>
-                      )}
-
+                      {fileItem.status === 'pending' && <span className="w-5 h-5 rounded-full bg-gray-300 flex-shrink-0" />}
+                      {fileItem.status === 'processing' && <span className="w-5 h-5 rounded-full border-2 border-purple-600 border-t-transparent animate-spin flex-shrink-0" />}
+                      {fileItem.status === 'completed' && <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-xs flex-shrink-0">O</span>}
+                      {fileItem.status === 'error' && <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white text-xs flex-shrink-0">X</span>}
                       <span className="truncate">{fileItem.file.name}</span>
-
                       {fileItem.documentType && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs flex-shrink-0">
                           {fileItem.documentType}
                         </span>
                       )}
-
-                      {fileItem.error && (
-                        <span className="text-red-600 text-xs">{fileItem.error}</span>
-                      )}
+                      {fileItem.error && <span className="text-red-600 text-xs">{fileItem.error}</span>}
                     </div>
-
                     {!isProcessing && (
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="text-gray-400 hover:text-red-500 ml-2"
-                      >
+                      <button onClick={() => removeFile(index)} className="text-gray-400 hover:text-red-500 ml-2 flex-shrink-0">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
@@ -664,150 +707,175 @@ export default function PayrollPage() {
 
           {/* 에러 메시지 */}
           {error && (
-            <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">
-              {error}
-            </div>
+            <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">{error}</div>
           )}
 
-          {/* 감지된 문서 유형 */}
-          {(payrollData || bankData || withholdingData) && (
-            <div className="flex gap-3 flex-wrap">
+          {/* 감지된 문서 */}
+          {(detectedTypes.payroll || detectedTypes.bank || detectedTypes.withholding) && (
+            <div className="flex gap-3 flex-wrap items-center">
               <span className="text-sm text-gray-600">감지된 문서:</span>
               {detectedTypes.payroll && (
                 <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">급여대장</span>
               )}
               {detectedTypes.withholding && (
-                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">원천징수신고서</span>
+                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">
+                  원천징수신고서{monthGroups.filter((g) => g.withholding).length > 1 ? ` (${monthGroups.filter((g) => g.withholding).length}건)` : ''}
+                </span>
               )}
               {detectedTypes.bank && (
-                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">통장내역</span>
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                  통장내역{monthGroups.flatMap((g) => g.bankList).length > 1 ? ` (${monthGroups.flatMap((g) => g.bankList).length}건)` : ''}
+                </span>
               )}
             </div>
           )}
 
-          {/* 검증 결과 */}
-          {verificationResult && (
-            <div className="space-y-6">
-              {/* 총액 비교 */}
-              <div className={`p-6 rounded-xl ${verificationResult.isMatched ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200'}`}>
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  {verificationResult.isMatched ? (
-                    <span className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">O</span>
-                  ) : (
-                    <span className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white text-sm">X</span>
-                  )}
-                  크로스체크 결과
-                </h3>
+          {/* 결과 테이블 */}
+          {monthGroups.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold text-gray-900">크로스체크 결과</h3>
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left py-3 px-4 font-medium text-gray-500">귀속월</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-500">급여대장</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-500">원천징수</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-500">이체출금</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">귀속월</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">지급월</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">결과</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthGroups.flatMap((group) => {
+                      const isExpanded = expandedMonth === group.attributionMonth
+                      const hasIndividual = group.individualMatches.length > 0
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* 급여대장 */}
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-sm text-gray-600 mb-1">급여대장 실지급액</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {verificationResult.payrollTotal > 0 ? `${formatNumber(verificationResult.payrollTotal)}원` : '-'}
-                    </p>
-                    {payrollData?.employees && (
-                      <p className="text-xs text-gray-500 mt-1">{payrollData.employees.length}명</p>
-                    )}
-                  </div>
-
-                  {/* 원천징수신고서 */}
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-sm text-gray-600 mb-1">원천징수 총지급액</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {verificationResult.withholdingTotal ? `${formatNumber(verificationResult.withholdingTotal)}원` : '-'}
-                    </p>
-                    {withholdingData && (
-                      <p className="text-xs text-gray-500 mt-1">{withholdingData.attributionYearMonth}</p>
-                    )}
-                  </div>
-
-                  {/* 통장내역 */}
-                  <div className="bg-white rounded-xl p-4 shadow-sm">
-                    <p className="text-sm text-gray-600 mb-1">통장 출금액</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {verificationResult.bankTotal > 0 ? `${formatNumber(verificationResult.bankTotal)}원` : '-'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">급여대장 vs 통장 차이</span>
-                    <span className={`text-xl font-bold ${verificationResult.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {verificationResult.difference > 0 ? '+' : ''}{formatNumber(verificationResult.difference)}원
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-gray-600">결과</span>
-                    <span className={`font-bold ${verificationResult.isMatched ? 'text-green-600' : 'text-red-600'}`}>
-                      {verificationResult.isMatched ? '일치' : '불일치'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* 개인별 매칭 */}
-              {verificationResult.individualMatches.length > 0 && (
-                <div className="bg-white/60 backdrop-blur-sm p-6 rounded-xl border border-white/50">
-                  <h3 className="text-lg font-semibold mb-4">개인별 매칭</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-2 px-3">이름</th>
-                          <th className="text-right py-2 px-3">급여대장</th>
-                          <th className="text-right py-2 px-3">통장</th>
-                          <th className="text-right py-2 px-3">차이</th>
-                          <th className="text-center py-2 px-3">결과</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {verificationResult.individualMatches.map((match, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
-                            <td className="py-2 px-3">{match.name}</td>
-                            <td className="text-right py-2 px-3">{formatNumber(match.payrollAmount)}</td>
-                            <td className="text-right py-2 px-3">
-                              {match.bankAmount > 0 ? formatNumber(match.bankAmount) : '-'}
-                            </td>
-                            <td className={`text-right py-2 px-3 ${match.difference !== 0 ? 'text-red-600' : ''}`}>
-                              {match.bankAmount > 0 ? formatNumber(match.difference) : '-'}
-                            </td>
-                            <td className="text-center py-2 px-3">
-                              {match.isMatched ? (
-                                <span className="text-green-600">O</span>
-                              ) : match.bankAmount > 0 ? (
-                                <span className="text-red-600">X</span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
+                      const mainRow = (
+                        <tr
+                          key={group.attributionMonth}
+                          onClick={() => hasIndividual && toggleExpanded(group.attributionMonth)}
+                          className={`border-b border-gray-100 transition-colors
+                            ${hasIndividual ? 'cursor-pointer hover:bg-gray-50' : ''}
+                            ${!group.isMatched ? 'bg-red-50/40' : ''}`}
+                        >
+                          <td className="py-3 px-4 font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <span>{group.attributionMonth || '-'}</span>
+                              {hasIndividual && (
+                                <span className="text-gray-400 text-xs">{isExpanded ? '▲' : '▼'}</span>
                               )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-3">
-                    * 통장 적요에 직원 이름이 포함된 경우에만 개인별 매칭이 가능합니다.
-                  </p>
-                </div>
-              )}
+                            </div>
+                          </td>
+                          <td className="text-right py-3 px-4 tabular-nums">
+                            {group.payrollTotal > 0 ? formatNumber(group.payrollTotal) : '-'}
+                            {group.payroll?.employees && group.payroll.employees.length > 0 && (
+                              <span className="text-xs text-gray-400 ml-1">({group.payroll.employees.length}명)</span>
+                            )}
+                          </td>
+                          <td className="text-right py-3 px-4 tabular-nums">
+                            {group.withholdingTotal > 0 ? formatNumber(group.withholdingTotal) : '-'}
+                          </td>
+                          <td className="text-right py-3 px-4 tabular-nums">
+                            {group.bankTotal > 0 ? formatNumber(group.bankTotal) : '-'}
+                            {group.bankList.length > 1 && (
+                              <span className="text-xs text-gray-400 ml-1">({group.bankList.length}건)</span>
+                            )}
+                          </td>
+                          <td className="text-center py-3 px-4">
+                            {group.withholding ? (
+                              <span className={group.attributionMonthMatched ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                                {group.attributionMonthMatched ? '✓' : '✗'}
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="text-center py-3 px-4">
+                            {group.bankList.length > 0 && group.withholding ? (
+                              <span className={group.paymentMonthMatched ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                                {group.paymentMonthMatched ? '✓' : '✗'}
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="text-center py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              group.isMatched ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {group.isMatched ? '일치' : '불일치'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+
+                      if (!isExpanded || !hasIndividual) return [mainRow]
+
+                      const expandedRow = (
+                        <tr key={`expanded-${group.attributionMonth}`}>
+                          <td colSpan={7} className="p-0 border-b border-gray-200">
+                            <div className="bg-gray-50/80 px-6 py-4">
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                                개인별 매칭 — {group.attributionMonth}
+                              </p>
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-gray-200">
+                                    <th className="text-left py-2 px-2 text-gray-500 font-medium">이름</th>
+                                    <th className="text-right py-2 px-2 text-gray-500 font-medium">급여대장</th>
+                                    <th className="text-right py-2 px-2 text-gray-500 font-medium">통장</th>
+                                    <th className="text-right py-2 px-2 text-gray-500 font-medium">차이</th>
+                                    <th className="text-center py-2 px-2 text-gray-500 font-medium">결과</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.individualMatches.map((match, matchIdx) => (
+                                    <tr key={matchIdx} className="border-b border-gray-100 last:border-0">
+                                      <td className="py-2 px-2">{match.name}</td>
+                                      <td className="text-right py-2 px-2 tabular-nums">{formatNumber(match.payrollAmount)}</td>
+                                      <td className="text-right py-2 px-2 tabular-nums">
+                                        {match.bankAmount > 0 ? formatNumber(match.bankAmount) : '-'}
+                                      </td>
+                                      <td className={`text-right py-2 px-2 tabular-nums ${match.bankAmount > 0 && match.difference !== 0 ? 'text-red-600' : ''}`}>
+                                        {match.bankAmount > 0 ? formatNumber(match.difference) : '-'}
+                                      </td>
+                                      <td className="text-center py-2 px-2">
+                                        {match.isMatched
+                                          ? <span className="text-green-600 font-medium">O</span>
+                                          : match.bankAmount > 0
+                                          ? <span className="text-red-600 font-medium">X</span>
+                                          : <span className="text-gray-300">-</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <p className="text-xs text-gray-400 mt-3">
+                                * 통장 적요에 직원 이름이 포함된 경우에만 개인별 매칭이 가능합니다.
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+
+                      return [mainRow, expandedRow]
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
-        {/* 안내 문구 */}
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-600 mb-3">지원 문서 유형</p>
           <div className="flex flex-wrap justify-center gap-2">
-            {['급여대장', '원천징수신고서', '통장내역'].map((type) => (
+            {['급여대장 (Excel/PDF)', '원천징수신고서', '이체확인증 / 통장내역'].map((type) => (
               <span key={type} className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/60 text-gray-600 backdrop-blur-sm">
                 {type}
               </span>
             ))}
           </div>
           <p className="mt-3 text-gray-500 text-sm">
-            하나의 PDF에 여러 문서가 섞여있어도 자동으로 감지합니다.
+            여러 달치 파일을 한 번에 업로드하면 월별로 자동 그룹핑합니다.
           </p>
         </div>
       </div>

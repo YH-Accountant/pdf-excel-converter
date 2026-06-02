@@ -310,27 +310,34 @@ export const documentTemplates: Record<DocumentType, {
 
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
-    fields: ['attributionYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
+    fields: ['attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
     prompt: `당신은 원천징수이행상황신고서 분석 전문가입니다. 아래 신고서에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
 1. attributionYearMonth (귀속년월)
    - YYYY-MM 형식
-   - 예: "2025-03"
+   - 급여가 귀속되는 월 (급여 발생 월)
+   - 예: "2025-09"
 
-2. numberOfPeople (인원수)
+2. paymentYearMonth (지급연월)
+   - YYYY-MM 형식
+   - 실제 급여를 지급한 월 (이체 실행 월)
+   - 귀속년월의 다음 달인 경우가 많음
+   - 예: 귀속 2025-09이면 지급연월은 보통 "2025-10"
+
+3. numberOfPeople (인원수)
    - 숫자만
    - 총 인원수
 
-3. totalPayment (총 지급액)
+4. totalPayment (총 지급액)
    - 숫자만 (콤마 없이)
    - 예: 264000000
 
-4. incomeTax (소득세)
+5. incomeTax (소득세)
    - 숫자만 (콤마 없이)
    - 예: 20420000
 
-5. localIncomeTax (지방소득세)
+6. localIncomeTax (지방소득세)
    - 숫자만 (콤마 없이)
    - 소득세의 10%로 계산
    - 예: incomeTax가 20420000이면 localIncomeTax는 2042000
