@@ -267,16 +267,15 @@ export default function PayrollPage() {
     }
   }
 
-  const processFile = async (fileItem: ProcessingFile, targetAttributionYearMonth?: string): Promise<any> => {
+  const processFile = async (fileItem: ProcessingFile, targetAttributionYearMonth?: string, forceOcr = false): Promise<any> => {
     const formData = new FormData()
 
     if (fileItem.file.type === 'application/pdf') {
       const text = await extractTextFromPdf(fileItem.file)
       const contentOnly = text.replace(/\[페이지 \d+\]\s*/g, '').trim()
-      // 한글 문자 수 기준으로 판단 — 이미지 PDF는 한글이 없고 바이너리 잔재만 남음
-      const koreanChars = (contentOnly.match(/[가-힣]/g) || []).length
+      const contentLength = contentOnly.length
 
-      if (koreanChars >= 10) {
+      if (!forceOcr && contentLength >= 50) {
         formData.append('pdfText', text)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')
@@ -363,8 +362,22 @@ export default function PayrollPage() {
             directParsedDates = parseWithholdingDatesFromText(rawText)
           }
 
-          const result = await processFile(fileItem)
-          const documents = result.isMultipleDocuments ? result.documents : [result]
+          let result = await processFile(fileItem)
+          let documents = result.isMultipleDocuments ? result.documents : [result]
+
+          // 이미지 PDF인데 텍스트로 분류돼 핵심 필드가 모두 null인 경우 → OCR 강제 재시도
+          const needsOcrRetry = documents.some(
+            (doc: any) =>
+              doc.documentType === 'bankStatement' &&
+              !doc.fields?.totalWithdrawal &&
+              !doc.fields?.transactionDate &&
+              !doc.fields?.transferDate
+          )
+          if (needsOcrRetry && fileItem.file.type === 'application/pdf') {
+            console.log('bankStatement 필드 null → OCR 재시도')
+            result = await processFile(fileItem, undefined, true)
+            documents = result.isMultipleDocuments ? result.documents : [result]
+          }
 
           for (const doc of documents) {
             if (doc.documentType === 'withholdingTax') {
