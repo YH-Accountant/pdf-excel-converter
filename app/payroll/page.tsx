@@ -188,6 +188,22 @@ export default function PayrollPage() {
     return { attributionYearMonth, paymentYearMonth }
   }
 
+  const parseBankTransfersFromOcrText = (text: string): Array<{ transactionDate: string; totalWithdrawal: number }> => {
+    const results: Array<{ transactionDate: string; totalWithdrawal: number }> = []
+    const pages = text.split(/===\s*페이지\s*\d+\s*===/).filter((p) => p.trim())
+    for (const page of pages) {
+      const dateMatch = page.match(/(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}/)
+      const amountMatch = page.match(/(\d+)건\s*\/\s*([\d,]+)원/)
+      if (dateMatch && amountMatch) {
+        results.push({
+          transactionDate: dateMatch[1],
+          totalWithdrawal: parseInt(amountMatch[2].replace(/,/g, ''), 10),
+        })
+      }
+    }
+    return results
+  }
+
   const isExcelFile = (f: ProcessingFile): boolean => {
     const name = f.file.name.toLowerCase()
     return (
@@ -357,6 +373,7 @@ export default function PayrollPage() {
         try {
           // 귀속/지급연월 추출: 텍스트 PDF는 직접 파싱, 이미지 PDF는 OCR 후 파싱
           let directParsedDates = { attributionYearMonth: '', paymentYearMonth: '' }
+          let cachedOcrText: string | null = null
           if (fileItem.file.type === 'application/pdf') {
             const rawText = await extractTextFromPdf(fileItem.file)
             directParsedDates = parseWithholdingDatesFromText(rawText)
@@ -367,7 +384,10 @@ export default function PayrollPage() {
               if (contentOnly.length < 50) {
                 const images = await convertPdfToBase64Images(fileItem.file)
                 const ocrText = await callGoogleOcr(images)
-                if (ocrText) directParsedDates = parseWithholdingDatesFromText(ocrText)
+                if (ocrText) {
+                  cachedOcrText = ocrText
+                  directParsedDates = parseWithholdingDatesFromText(ocrText)
+                }
               }
             }
           }
@@ -375,7 +395,7 @@ export default function PayrollPage() {
           let result = await processFile(fileItem)
           let documents = result.isMultipleDocuments ? result.documents : [result]
 
-          // 이미지 PDF인데 텍스트로 분류돼 핵심 필드가 모두 null인 경우 → OCR 강제 재시도
+          // bankStatement 핵심 필드 null → regex 직접 파싱 시도 (Claude 의존 없음)
           const needsOcrRetry = documents.some(
             (doc: any) =>
               doc.documentType === 'bankStatement' &&
@@ -384,9 +404,25 @@ export default function PayrollPage() {
               !doc.fields?.transferDate
           )
           if (needsOcrRetry && fileItem.file.type === 'application/pdf') {
-            console.log('bankStatement 필드 null → OCR 재시도')
-            result = await processFile(fileItem, undefined, true)
-            documents = result.isMultipleDocuments ? result.documents : [result]
+            // 캐시된 OCR 텍스트로 직접 파싱 (이체확인증 전용 regex)
+            const ocrForParsing = cachedOcrText ?? await (async () => {
+              const images = await convertPdfToBase64Images(fileItem.file)
+              return callGoogleOcr(images)
+            })()
+            if (ocrForParsing) {
+              const bankEntries = parseBankTransfersFromOcrText(ocrForParsing)
+              if (bankEntries.length > 0) {
+                console.log(`이체확인증 직접 파싱 성공: ${bankEntries.length}건`)
+                documents = bankEntries.map((e) => ({
+                  documentType: 'bankStatement',
+                  fields: { transactionDate: e.transactionDate, totalWithdrawal: e.totalWithdrawal },
+                }))
+              } else {
+                // regex도 실패 → Claude 마지막 시도
+                result = await processFile(fileItem, undefined, true)
+                documents = result.isMultipleDocuments ? result.documents : [result]
+              }
+            }
           }
 
           for (const doc of documents) {
