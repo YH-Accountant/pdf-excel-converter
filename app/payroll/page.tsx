@@ -23,6 +23,7 @@ interface PayrollData {
   paymentDate: string
   employees: PayrollEmployee[]
   totalNetPay: number
+  totalGrossPay: number
 }
 
 interface BankData {
@@ -62,10 +63,12 @@ interface MonthGroup {
   payrollTotal: number
   bankTotal: number
   withholdingTotal: number
+  payrollGrossTotal: number
   difference: number
   isMatched: boolean
   attributionMonthMatched: boolean
   paymentMonthMatched: boolean
+  withholdingMatchesGross: boolean
   individualMatches: MatchResult[]
 }
 
@@ -187,9 +190,18 @@ export default function PayrollPage() {
             const headerText = rows.slice(0, 5).flat().filter(Boolean).join(' ')
             const attrMatch = headerText.match(/귀속[^0-9]*(\d{4})년\s*(\d{1,2})월/)
             const payMatch = headerText.match(/지급[^0-9]*(\d{4})년\s*(\d{1,2})월/)
+            let attributionYearMonth = attrMatch ? `${attrMatch[1]}-${attrMatch[2].padStart(2, '0')}` : ''
+            if (!attributionYearMonth) {
+              // 서해공장처럼 "귀속" 키워드 없이 "2025년 09월 급여 대장" 형태인 경우: 시트명 + 헤더 연도
+              const sheetMonthMatch = sheetName.match(/(\d{1,2})월/)
+              const yearMatch = headerText.match(/(\d{4})년/)
+              if (sheetMonthMatch && yearMatch) {
+                attributionYearMonth = `${yearMatch[1]}-${sheetMonthMatch[1].padStart(2, '0')}`
+              }
+            }
             return {
               sheetName,
-              attributionYearMonth: attrMatch ? `${attrMatch[1]}-${attrMatch[2].padStart(2, '0')}` : '',
+              attributionYearMonth,
               paymentYearMonth: payMatch ? `${payMatch[1]}-${payMatch[2].padStart(2, '0')}` : '',
             }
           })
@@ -397,10 +409,12 @@ export default function PayrollPage() {
             payrollTotal: 0,
             bankTotal: 0,
             withholdingTotal: w.totalPayment || 0,
+            payrollGrossTotal: 0,
             difference: 0,
             isMatched: false,
             attributionMonthMatched: false,
             paymentMonthMatched: false,
+            withholdingMatchesGross: false,
             individualMatches: [],
           })
         }
@@ -416,35 +430,14 @@ export default function PayrollPage() {
           payrollTotal: 0,
           bankTotal: 0,
           withholdingTotal: 0,
+          payrollGrossTotal: 0,
           difference: 0,
           isMatched: false,
           attributionMonthMatched: false,
           paymentMonthMatched: false,
+          withholdingMatchesGross: false,
           individualMatches: [],
         })
-      }
-
-      // 이체확인증 → 사업장+지급월 기준 그룹 매칭
-      for (const bank of rawBankList) {
-        let matched = false
-        if (bank.transferMonth) {
-          for (const group of groupMap.values()) {
-            const monthMatches = group.paymentMonth === bank.transferMonth
-            const divisionMatches =
-              !bank.companyDivision ||
-              !group.companyDivision ||
-              bank.companyDivision === group.companyDivision
-            if (monthMatches && divisionMatches) {
-              group.bankList.push(bank)
-              matched = true
-              break
-            }
-          }
-        }
-        if (!matched) {
-          const firstGroup = groupMap.values().next().value
-          if (firstGroup) firstGroup.bankList.push(bank)
-        }
       }
 
       // Phase 3: Excel → 사업장별 시트 매칭 후 Claude 처리
@@ -492,7 +485,24 @@ export default function PayrollPage() {
                   }
                 }
 
-                // fallback 그룹
+                // 사업장 동일 + 귀속월 비어있는 그룹 fallback (원천징수 귀속월 추출 실패한 경우)
+                if (!targetGroup && payrollDiv) {
+                  for (const group of groupMap.values()) {
+                    if (group.companyDivision === payrollDiv && !group.attributionMonth && !group.payroll) {
+                      group.attributionMonth = payrollMonth
+                      if (!group.paymentMonth && payrollMonth) {
+                        const [yr, mo] = payrollMonth.split('-').map(Number)
+                        const nextMo = mo === 12 ? 1 : mo + 1
+                        const nextYr = mo === 12 ? yr + 1 : yr
+                        group.paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
+                      }
+                      targetGroup = group
+                      break
+                    }
+                  }
+                }
+
+                // __fallback__ 그룹
                 if (!targetGroup) {
                   const fb = groupMap.get('__fallback__')
                   if (fb) {
@@ -508,6 +518,7 @@ export default function PayrollPage() {
                     paymentDate: doc.fields.paymentDate || '',
                     employees: doc.fields.employees || [],
                     totalNetPay: doc.fields.totalNetPay || 0,
+                    totalGrossPay: doc.fields.totalGrossPay || 0,
                   }
                 }
               }
@@ -524,6 +535,29 @@ export default function PayrollPage() {
         ))
       }
 
+      // Phase 3.5: 이체확인증 → 사업장+지급월 기준 그룹 매칭 (Excel 처리 후 지급월 확정된 뒤 실행)
+      for (const bank of rawBankList) {
+        let matched = false
+        if (bank.transferMonth) {
+          for (const group of groupMap.values()) {
+            const monthMatches = group.paymentMonth === bank.transferMonth
+            const divisionMatches =
+              !bank.companyDivision ||
+              !group.companyDivision ||
+              bank.companyDivision === group.companyDivision
+            if (monthMatches && divisionMatches) {
+              group.bankList.push(bank)
+              matched = true
+              break
+            }
+          }
+        }
+        if (!matched) {
+          const firstGroup = groupMap.values().next().value
+          if (firstGroup) firstGroup.bankList.push(bank)
+        }
+      }
+
       // Phase 4: 크로스체크 계산
       const finalGroups: MonthGroup[] = []
       for (const group of groupMap.values()) {
@@ -531,9 +565,17 @@ export default function PayrollPage() {
           group.payroll?.totalNetPay ||
           group.payroll?.employees?.reduce((sum, e) => sum + (e.netPay || 0), 0) ||
           0
+        const payrollGrossTotal =
+          group.payroll?.totalGrossPay ||
+          group.payroll?.employees?.reduce((sum: number, e: any) => sum + (e.grossPay || 0), 0) ||
+          0
         const bankTotal = group.bankList.reduce((sum, b) => sum + b.totalWithdrawal, 0)
         const difference = payrollTotal - bankTotal
         const isMatched = Math.abs(difference) < 100
+        const withholdingMatchesGross =
+          (group.withholding?.totalPayment || 0) > 0 &&
+          payrollGrossTotal > 0 &&
+          Math.abs((group.withholding?.totalPayment || 0) - payrollGrossTotal) < 1000
 
         const attributionMonthMatched =
           !!group.payroll?.yearMonth &&
@@ -568,10 +610,12 @@ export default function PayrollPage() {
           payrollTotal,
           bankTotal,
           withholdingTotal: group.withholding?.totalPayment || 0,
+          payrollGrossTotal,
           difference,
           isMatched,
           attributionMonthMatched,
           paymentMonthMatched,
+          withholdingMatchesGross,
           individualMatches,
         })
       }
@@ -797,6 +841,7 @@ export default function PayrollPage() {
                       <th className="text-right py-3 px-4 font-medium text-gray-500">이체출금</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">귀속월</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">지급월</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">총액</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">결과</th>
                     </tr>
                   </thead>
@@ -804,7 +849,7 @@ export default function PayrollPage() {
                     {monthGroups.flatMap((group) => {
                       const isExpanded = expandedMonth === group.groupKey
                       const hasIndividual = group.individualMatches.length > 0
-                      const colSpan = showDivisionColumn ? 8 : 7
+                      const colSpan = showDivisionColumn ? 9 : 8
 
                       const mainRow = (
                         <tr
@@ -834,7 +879,15 @@ export default function PayrollPage() {
                             )}
                           </td>
                           <td className="text-right py-3 px-4 tabular-nums">
-                            {group.withholdingTotal > 0 ? formatNumber(group.withholdingTotal) : '-'}
+                            <div>{group.withholdingTotal > 0 ? formatNumber(group.withholdingTotal) : '-'}</div>
+                            {group.payrollGrossTotal > 0 && (
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                급여총액: {formatNumber(group.payrollGrossTotal)}
+                                <span className={`ml-1 font-medium ${group.withholdingMatchesGross ? 'text-green-500' : 'text-red-500'}`}>
+                                  {group.withholdingMatchesGross ? '✓' : '✗'}
+                                </span>
+                              </div>
+                            )}
                           </td>
                           <td className="text-right py-3 px-4 tabular-nums">
                             {group.bankTotal > 0 ? formatNumber(group.bankTotal) : '-'}
@@ -853,6 +906,13 @@ export default function PayrollPage() {
                             {group.bankList.length > 0 && group.withholding ? (
                               <span className={group.paymentMonthMatched ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
                                 {group.paymentMonthMatched ? '✓' : '✗'}
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="text-center py-3 px-4">
+                            {group.withholdingTotal > 0 && group.payrollGrossTotal > 0 ? (
+                              <span className={group.withholdingMatchesGross ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                                {group.withholdingMatchesGross ? '✓' : '✗'}
                               </span>
                             ) : <span className="text-gray-300">-</span>}
                           </td>
