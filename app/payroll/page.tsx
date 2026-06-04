@@ -485,19 +485,27 @@ export default function PayrollPage() {
                   }
                 }
 
-                // 사업장 동일 + 귀속월 비어있는 그룹 fallback (원천징수 귀속월 추출 실패한 경우)
-                if (!targetGroup && payrollDiv) {
+                // 귀속월 비어있는 그룹 fallback (원천징수에서 귀속월/사업장 추출 실패한 경우)
+                // 사업장 중 하나라도 비어있으면 매칭 허용 (추출 실패 케이스 포함)
+                if (!targetGroup) {
                   for (const group of groupMap.values()) {
-                    if (group.companyDivision === payrollDiv && !group.attributionMonth && !group.payroll) {
-                      group.attributionMonth = payrollMonth
-                      if (!group.paymentMonth && payrollMonth) {
-                        const [yr, mo] = payrollMonth.split('-').map(Number)
-                        const nextMo = mo === 12 ? 1 : mo + 1
-                        const nextYr = mo === 12 ? yr + 1 : yr
-                        group.paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
+                    if (!group.attributionMonth && !group.payroll && group.groupKey !== '__fallback__') {
+                      const divMatches =
+                        !payrollDiv ||
+                        !group.companyDivision ||
+                        group.companyDivision === payrollDiv
+                      if (divMatches) {
+                        group.attributionMonth = payrollMonth
+                        if (payrollDiv && !group.companyDivision) group.companyDivision = payrollDiv
+                        if (!group.paymentMonth && payrollMonth) {
+                          const [yr, mo] = payrollMonth.split('-').map(Number)
+                          const nextMo = mo === 12 ? 1 : mo + 1
+                          const nextYr = mo === 12 ? yr + 1 : yr
+                          group.paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
+                        }
+                        targetGroup = group
+                        break
                       }
-                      targetGroup = group
-                      break
                     }
                   }
                 }
