@@ -406,7 +406,7 @@ export const documentTemplates: Record<DocumentType, {
 
   payroll: {
     label: '급여대장',
-    fields: ['companyDivision', 'paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay'],
+    fields: ['companyDivision', 'paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay', 'totalGrossPay'],
     prompt: `당신은 급여대장 분석 전문가입니다. 아래 급여대장(더존 등 회계프로그램 출력물)에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
@@ -442,6 +442,12 @@ export const documentTemplates: Record<DocumentType, {
    - 숫자만 (콤마 없이)
    - 예: 25800000
 
+6. totalGrossPay (총지급액 합계)
+   - 모든 직원의 지급총액(grossPay) 합계 (공제 전 금액)
+   - 숫자만 (콤마 없이)
+   - 원천징수이행상황신고서의 총지급액과 비교하는 데 사용됨
+   - 예: 29800000
+
 [응답 형식]
 {
   "paymentYearMonth": "2025-01",
@@ -451,7 +457,8 @@ export const documentTemplates: Record<DocumentType, {
     { "name": "홍길동", "baseSalary": 3000000, "allowances": 500000, "grossPay": 3500000, "deductions": 400000, "netPay": 3100000 },
     { "name": "김철수", "baseSalary": 2800000, "allowances": 300000, "grossPay": 3100000, "deductions": 350000, "netPay": 2750000 }
   ],
-  "totalNetPay": 5850000
+  "totalNetPay": 5850000,
+  "totalGrossPay": 6600000
 }
 
 [중요]
