@@ -165,27 +165,27 @@ export default function PayrollPage() {
     return validTypes.includes(file.type) || name.endsWith('.xls') || name.endsWith('.xlsx')
   }
 
-  const extractHintsFromFileName = (fileName: string): { companyDivision: string; attributionYearMonth: string } => {
-    const name = fileName.replace(/\.[^.]+$/, '')
-    // 사업장/공장명 추출: 제1공장, 제2공장, 본사, 서울지점 등
-    let companyDivision = ''
-    const divMatch = name.match(/[가-힣]+(?:공장|본사|지점|사업부|센터)/)
-    if (divMatch) companyDivision = divMatch[0]
-    // 귀속월 추출 (범위 표기 "1~9월"은 단일 월 특정 불가 → 제외)
+  const parseWithholdingDatesFromText = (text: string): { attributionYearMonth: string; paymentYearMonth: string } => {
     let attributionYearMonth = ''
-    if (!/\d+~\d+월/.test(name)) {
-      const ymMatch =
-        name.match(/(\d{4})년\s*(\d{1,2})월/) ||   // 2025년 9월
-        name.match(/(\d{2})년\s*(\d{1,2})월/) ||    // 25년 9월
-        name.match(/(\d{2})\.(\d{2})월/)             // 25.09월
-      if (ymMatch) {
-        let year = parseInt(ymMatch[1])
-        const month = parseInt(ymMatch[2])
-        if (year < 100) year += 2000
-        attributionYearMonth = `${year}-${String(month).padStart(2, '0')}`
-      }
+    let paymentYearMonth = ''
+
+    const attrMatch =
+      text.match(/귀\s*속\s*연\s*월[^0-9]*(\d{4})\s*년\s*(\d{1,2})\s*월/) ||
+      text.match(/귀\s*속\s*연\s*월[^0-9]*(\d{4})[-./](\d{1,2})/) ||
+      text.match(/귀속[^0-9]{0,10}(\d{4})\s*년?\s*(\d{1,2})\s*월/)
+    if (attrMatch) {
+      attributionYearMonth = `${attrMatch[1]}-${String(parseInt(attrMatch[2])).padStart(2, '0')}`
     }
-    return { companyDivision, attributionYearMonth }
+
+    const payMatch =
+      text.match(/지\s*급\s*연\s*월[^0-9]*(\d{4})\s*년\s*(\d{1,2})\s*월/) ||
+      text.match(/지\s*급\s*연\s*월[^0-9]*(\d{4})[-./](\d{1,2})/) ||
+      text.match(/지급[^0-9]{0,10}(\d{4})\s*년?\s*(\d{1,2})\s*월/)
+    if (payMatch) {
+      paymentYearMonth = `${payMatch[1]}-${String(parseInt(payMatch[2])).padStart(2, '0')}`
+    }
+
+    return { attributionYearMonth, paymentYearMonth }
   }
 
   const isExcelFile = (f: ProcessingFile): boolean => {
@@ -355,16 +355,22 @@ export default function PayrollPage() {
         setFiles((prev) => prev.map((f, idx) => idx === fileIndex ? { ...f, status: 'processing' } : f))
 
         try {
+          // PDF 텍스트에서 귀속/지급연월 직접 파싱 (Claude API 결과가 null일 때 fallback)
+          let directParsedDates = { attributionYearMonth: '', paymentYearMonth: '' }
+          if (fileItem.file.type === 'application/pdf') {
+            const rawText = await extractTextFromPdf(fileItem.file)
+            directParsedDates = parseWithholdingDatesFromText(rawText)
+          }
+
           const result = await processFile(fileItem)
           const documents = result.isMultipleDocuments ? result.documents : [result]
-          const fileHints = extractHintsFromFileName(fileItem.file.name)
 
           for (const doc of documents) {
             if (doc.documentType === 'withholdingTax') {
               withholdingList.push({
-                companyDivision: doc.fields.companyDivision || fileHints.companyDivision,
-                attributionYearMonth: doc.fields.attributionYearMonth || fileHints.attributionYearMonth,
-                paymentYearMonth: doc.fields.paymentYearMonth || '',
+                companyDivision: doc.fields.companyDivision || '',
+                attributionYearMonth: doc.fields.attributionYearMonth || directParsedDates.attributionYearMonth,
+                paymentYearMonth: doc.fields.paymentYearMonth || directParsedDates.paymentYearMonth,
                 numberOfPeople: doc.fields.numberOfPeople || 0,
                 totalPayment: doc.fields.totalPayment || 0,
                 incomeTax: doc.fields.incomeTax || 0,
@@ -391,7 +397,7 @@ export default function PayrollPage() {
                 ? `${transferMonthMatch[1]}-${String(parseInt(transferMonthMatch[2])).padStart(2, '0')}`
                 : ''
               rawBankList.push({
-                companyDivision: doc.fields.companyDivision || fileHints.companyDivision,
+                companyDivision: doc.fields.companyDivision || '',
                 transactions: doc.fields.transactions || [],
                 totalWithdrawal,
                 transferDate: String(transferDateRaw),
@@ -498,8 +504,7 @@ export default function PayrollPage() {
 
             for (const doc of documents) {
               if (doc.documentType === 'payroll') {
-                const excelHints = extractHintsFromFileName(excelFileItem.file.name)
-                const payrollDiv = doc.fields.companyDivision || excelHints.companyDivision
+                const payrollDiv = doc.fields.companyDivision || ''
                 const payrollMonth = doc.fields.paymentYearMonth || ''
 
                 // 사업장 + 귀속월로 정확히 매칭
