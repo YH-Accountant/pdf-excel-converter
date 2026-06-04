@@ -273,9 +273,10 @@ export default function PayrollPage() {
     if (fileItem.file.type === 'application/pdf') {
       const text = await extractTextFromPdf(fileItem.file)
       const contentOnly = text.replace(/\[페이지 \d+\]\s*/g, '').trim()
-      const contentLength = contentOnly.replace(/\s/g, '').length
+      // 한글 문자 수 기준으로 판단 — 이미지 PDF는 한글이 없고 바이너리 잔재만 남음
+      const koreanChars = (contentOnly.match(/[가-힣]/g) || []).length
 
-      if (contentLength >= 50) {
+      if (koreanChars >= 10) {
         formData.append('pdfText', text)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')
