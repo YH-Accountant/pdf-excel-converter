@@ -1,4 +1,4 @@
-import { DocumentType } from '@/app/single/page'
+﻿import { DocumentType } from '@/app/single/page'
 
 // 문서 유형별 추출 필드 정의
 export const documentTemplates: Record<DocumentType, {
@@ -191,73 +191,58 @@ export const documentTemplates: Record<DocumentType, {
     prompt: `당신은 통장 입출금내역/이체확인증 분석 전문가입니다. 아래 문서에서 핵심 정보를 정확하게 추출해주세요.
 
 [문서 유형]
-- 이체확인증: 일괄이체 총액이 표시됨
+- 이체확인증(급여이체결과조회): 월별 일괄이체 총액 표시. "이체일시", "전체건수/금액", "정상건수/금액" 형태
 - 거래내역조회: 개별 거래 내역이 나열됨
 
 [추출 규칙]
 0. companyDivision (사업장명/공장명)
-   - 이체확인증에 기재된 사업장 구분명 (있는 경우)
-   - 예: "둔포공장", "용인공장"
+   - 이체확인증에 기재된 사업장 구분명
+   - 예: "둔포공장", "서해공장"
    - 없으면 null
 
-1. transactionDate (거래일)
-   - YYYY-MM-DD 형식
+1. transactionDate (거래일 = 이체일시)
+   - "이체일시", "거래일", "이체일" 등에서 추출
+   - YYYY-MM-DD 형식 (시간 제외)
+   - 예: "2025-10-10"
 
 2. totalWithdrawal (출금 총액) ★ 핵심 필드
    - 숫자만 (콤마 없이)
-   - 이체확인증: "이체금액" 또는 "출금금액" 값
+   - 이체확인증: "전체건수/금액", "정상건수/금액", "이체금액", "출금금액" 중 하나에서 금액 추출
+     예) "35건 / 102,989,140원" → 102989140
    - 거래내역조회: 모든 출금액의 합계 (합계 행이 있으면 그 값 사용)
-   - 예: 29937410
 
 3. transactions (개별 거래 내역)
-   - 거래내역조회인 경우 배열로 추출
+   - 거래내역조회인 경우만 배열로 추출
    - 각 거래: { "description": "적요/기재내용", "withdrawal": 출금액 }
-   - 적요에 이름이 있으면 그대로 추출 (예: "김민수", "급여이체")
 
-   예시:
-   [
-     { "description": "김민수", "withdrawal": 3866000 },
-     { "description": "이서연", "withdrawal": 4590000 }
-   ]
+4. deposit (입금액) / withdrawal (출금액) / balance (잔액)
+   - 숫자만 (콤마 없이), 없으면 null
 
-4. deposit (입금액)
-   - 숫자만 (콤마 없이)
-   - 없으면 0
+5. transactionContent (거래 내용): 거래 적요 또는 메모
 
-5. withdrawal (출금액) - 단일 거래용
-   - 숫자만 (콤마 없이)
+6. counterparty (거래 상대방): 입금자 또는 출금 대상
 
-6. balance (잔액)
-   - 숫자만 (콤마 없이)
+[여러 달 이체확인증 처리 ★ 중요]
+이체일시가 여러 개인 경우(여러 달 묶음) → 반드시 isMultipleDocuments: true로 각 달 별도 반환
 
-7. transactionContent (거래 내용)
-   - 거래 적요 또는 메모
-
-8. counterparty (거래 상대방)
-   - 입금자 또는 출금 대상
-
-[응답 형식 예시 - 이체확인증]
+응답 형식 - 여러 달 이체확인증:
 {
-  "transactionDate": "2025-12-25",
-  "totalWithdrawal": 29937410,
-  "transactionContent": "12월 급여",
-  "counterparty": "김민수 외 6명"
-}
-
-[응답 형식 예시 - 거래내역조회]
-{
-  "transactionDate": "2025-12-25",
-  "totalWithdrawal": 29937410,
-  "transactions": [
-    { "description": "김민수", "withdrawal": 3866000 },
-    { "description": "이서연", "withdrawal": 4590000 }
+  "isMultipleDocuments": true,
+  "documents": [
+    { "documentType": "bankStatement", "fields": { "transactionDate": "2025-02-10", "totalWithdrawal": 102989140 } },
+    { "documentType": "bankStatement", "fields": { "transactionDate": "2025-10-10", "totalWithdrawal": 79063290 } }
   ]
 }
 
+응답 형식 - 단일 이체확인증:
+{ "transactionDate": "2025-10-10", "totalWithdrawal": 79063290 }
+
+응답 형식 - 거래내역조회:
+{ "transactionDate": "2025-10-10", "totalWithdrawal": 79063290, "transactions": [...] }
+
 [중요]
-- totalWithdrawal은 반드시 추출해야 합니다 (급여 크로스체크에 필수)
-- 합계 행이 있으면 그 값을 totalWithdrawal로 사용
-- 문서에서 명확히 확인되지 않는 정보는 null로 표시`
+- totalWithdrawal은 반드시 추출 (급여 크로스체크에 필수)
+- 문서에서 명확히 확인되지 않는 정보는 null로 표시`,
   },
 
   assetDisposal: {
@@ -433,13 +418,16 @@ export const documentTemplates: Record<DocumentType, {
    - 예: "둔포공장", "용인공장", "본사"
    - 명시되지 않으면 companyName과 동일하게 기재
 
-1. paymentYearMonth (귀속년월)
+1. paymentYearMonth (귀속년월 — 어느 달 급여인지)
    - YYYY-MM 형식
-   - 예: "2025-01"
+   - 반드시 "몇월 급여 대장"에서 추출. 예: "2025년 09월 급여 대장" → "2025-09"
+   - ★ 주의: "지급년월일", "지급일"은 다음 달인 경우가 많음. 헷갈리지 말 것
+     예) 9월 급여를 10월 10일에 지급 → paymentYearMonth는 "2025-09" (지급일 무시)
+   - [선택된 시트] 헤더의 "귀속:" 값이 있으면 그것을 우선 사용
 
 2. paymentDate (지급일)
    - YYYY-MM-DD 형식
-   - 급여 지급일
+   - "지급년월일", "지급일"에서 추출 (귀속년월과 다른 값)
 
 3. companyName (회사명)
    - 급여를 지급하는 회사명
