@@ -188,8 +188,13 @@ export default function PayrollPage() {
     return { attributionYearMonth, paymentYearMonth }
   }
 
-  const parseBankTransfersFromOcrText = (text: string): Array<{ transactionDate: string; totalWithdrawal: number }> => {
-    const results: Array<{ transactionDate: string; totalWithdrawal: number }> = []
+  const parseBankTransfersFromOcrText = (text: string): Array<{ transactionDate: string; totalWithdrawal: number; companyDivision: string }> => {
+    const results: Array<{ transactionDate: string; totalWithdrawal: number; companyDivision: string }> = []
+
+    // 사업장명 추출: "(주)삼일이노팩 둔포공장" → "둔포공장"
+    const companyMatch = text.match(/\([주株]\)\s*[^\s\n]+\s+([가-힣]+(?:공장|본사|지사|센터|사업장))/)
+    const companyDivision = companyMatch ? companyMatch[1].trim() : ''
+
     const pages = text.split(/===\s*페이지\s*\d+\s*===/).filter((p) => p.trim())
     for (const page of pages) {
       const dateMatch = page.match(/(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}/)
@@ -198,6 +203,7 @@ export default function PayrollPage() {
         results.push({
           transactionDate: dateMatch[1],
           totalWithdrawal: parseInt(amountMatch[2].replace(/,/g, ''), 10),
+          companyDivision,
         })
       }
     }
@@ -415,7 +421,7 @@ export default function PayrollPage() {
                 console.log(`이체확인증 직접 파싱 성공: ${bankEntries.length}건`)
                 documents = bankEntries.map((e) => ({
                   documentType: 'bankStatement',
-                  fields: { transactionDate: e.transactionDate, totalWithdrawal: e.totalWithdrawal },
+                  fields: { transactionDate: e.transactionDate, totalWithdrawal: e.totalWithdrawal, companyDivision: e.companyDivision },
                 }))
               } else {
                 // regex도 실패 → Claude 마지막 시도
