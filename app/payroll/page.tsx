@@ -540,7 +540,15 @@ export default function PayrollPage() {
                   const fb = groupMap.get('__fallback__')
                   if (fb) {
                     targetGroup = fb
-                    if (payrollMonth) targetGroup.attributionMonth = payrollMonth
+                    if (payrollMonth) {
+                      targetGroup.attributionMonth = payrollMonth
+                      if (!targetGroup.paymentMonth) {
+                        const [yr, mo] = payrollMonth.split('-').map(Number)
+                        const nextMo = mo === 12 ? 1 : mo + 1
+                        const nextYr = mo === 12 ? yr + 1 : yr
+                        targetGroup.paymentMonth = `${nextYr}-${String(nextMo).padStart(2, '0')}`
+                      }
+                    }
                   }
                 }
 

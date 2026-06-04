@@ -316,32 +316,41 @@ export const documentTemplates: Record<DocumentType, {
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
     fields: ['companyDivision', 'attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
-    prompt: `당신은 원천징수이행상황신고서 분석 전문가입니다. 아래 신고서에서 핵심 정보를 정확하게 추출해주세요.
+    prompt: `당신은 원천징수 문서 분석 전문가입니다. 아래 문서는 원천징수이행상황신고서 또는 원천징수영수증입니다. 핵심 정보를 정확하게 추출해주세요.
+
+[문서 유형]
+- 원천징수이행상황신고서: 사업자가 세무서에 제출하는 신고서. 귀속연월/지급연월/총지급액 명시됨
+- 원천징수영수증: 사업자가 근로자에게 발급하는 영수증. 총급여액/소득세 명시됨
 
 [추출 규칙]
 0. companyDivision (사업장명/공장명)
-   - 신고서에 기재된 사업장 구분명 (공장명, 지점명 등)
+   - 문서에 기재된 사업장 구분명 (공장명, 지점명 등)
    - 전체 회사명이 아닌 사업장 구분명만 추출
    - 예: "둔포공장", "용인공장", "본사", "서울지점"
    - 사업장 구분이 없으면 회사명 전체 기재
 
 1. attributionYearMonth (귀속년월)
    - YYYY-MM 형식
-   - 급여가 귀속되는 월 (급여 발생 월)
+   - 이행상황신고서: "귀속연월" 항목에서 추출
+   - 원천징수영수증: 문서 제목/발급일에서 해당 월 추출 (예: "2025년 9월분" → "2025-09")
+   - 근무기간이 여러 달인 경우 마지막 달 기준으로 추출
    - 예: "2025-09"
 
 2. paymentYearMonth (지급연월)
    - YYYY-MM 형식
-   - 실제 급여를 지급한 월 (이체 실행 월)
-   - 귀속년월의 다음 달인 경우가 많음
-   - 예: 귀속 2025-09이면 지급연월은 보통 "2025-10"
+   - 이행상황신고서: "지급연월" 항목에서 추출
+   - 원천징수영수증: 귀속년월의 다음 달로 설정 (예: 귀속 2025-09 → "2025-10")
+   - 예: "2025-10"
 
 3. numberOfPeople (인원수)
    - 숫자만
-   - 총 인원수
+   - 이행상황신고서: 신고서의 인원 수
+   - 원천징수영수증: 1 (개인별 발급)
 
 4. totalPayment (총 지급액)
    - 숫자만 (콤마 없이)
+   - 이행상황신고서: "총지급액" 항목
+   - 원천징수영수증: "총급여액" 또는 "급여총액" 항목
    - 예: 264000000
 
 5. incomeTax (소득세)
@@ -354,6 +363,7 @@ export const documentTemplates: Record<DocumentType, {
    - 예: incomeTax가 20420000이면 localIncomeTax는 2042000
 
 [중요]
+- 원천징수영수증도 이 템플릿으로 처리합니다
 - 지방소득세는 소득세의 10%입니다
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
@@ -476,7 +486,7 @@ export const documentTypeDetectionPrompt = `이 문서의 유형을 판별해주
 - accountingSlip: 회계전표 (분개전표, 입금전표, 출금전표 등)
 - bankStatement: 통장 입출금내역
 - assetDisposal: 취득처분전표 (자산 취득/처분 관련)
-- withholdingTax: 급여원천징수이행상황신고서
+- withholdingTax: 급여원천징수이행상황신고서 또는 원천징수영수증 (급여 관련 원천징수 문서)
 - estimate: 견적서
 - payroll: 급여대장 (급여명세서, 급여지급내역, 급여대장 등)
 
