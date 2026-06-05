@@ -401,11 +401,10 @@ export default function PayrollPage() {
           let result = await processFile(fileItem)
           let documents = result.isMultipleDocuments ? result.documents : [result]
 
-          // bankStatement 핵심 필드 null → regex 직접 파싱 시도 (Claude 의존 없음)
+          // bankStatement 날짜 없으면 regex 직접 파싱 (금액만 있고 날짜 없는 경우도 포함)
           const needsOcrRetry = documents.some(
             (doc: any) =>
               doc.documentType === 'bankStatement' &&
-              !doc.fields?.totalWithdrawal &&
               !doc.fields?.transactionDate &&
               !doc.fields?.transferDate
           )
