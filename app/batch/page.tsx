@@ -80,20 +80,28 @@ export default function BatchPage() {
     return images
   }
 
-  // Google Vision OCR 호출
+  // Google Vision OCR 호출 (5장씩 분할 전송 → 4MB 한도 초과 방지)
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
-    const response = await fetch('/api/ocr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images, useDocumentMode: true }),
-    })
+    const BATCH_SIZE = 5
+    const textParts: string[] = []
 
-    if (!response.ok) {
-      throw new Error('OCR 처리 실패')
+    for (let i = 0; i < images.length; i += BATCH_SIZE) {
+      const batch = images.slice(i, i + BATCH_SIZE)
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: batch, useDocumentMode: true }),
+      })
+
+      if (!response.ok) {
+        throw new Error('OCR 처리 실패')
+      }
+
+      const data = await response.json()
+      if (data.text) textParts.push(data.text)
     }
 
-    const data = await response.json()
-    return data.text
+    return textParts.join('\n\n')
   }
 
   // 지원하는 파일 형식 체크

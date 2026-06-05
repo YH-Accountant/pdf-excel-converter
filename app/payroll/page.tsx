@@ -144,14 +144,22 @@ export default function PayrollPage() {
   }
 
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
-    const response = await fetch('/api/ocr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images, useDocumentMode: true }),
-    })
-    if (!response.ok) throw new Error('OCR 처리 실패')
-    const data = await response.json()
-    return data.text
+    const BATCH_SIZE = 5
+    const textParts: string[] = []
+
+    for (let i = 0; i < images.length; i += BATCH_SIZE) {
+      const batch = images.slice(i, i + BATCH_SIZE)
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: batch, useDocumentMode: true }),
+      })
+      if (!response.ok) throw new Error('OCR 처리 실패')
+      const data = await response.json()
+      if (data.text) textParts.push(data.text)
+    }
+
+    return textParts.join('\n\n')
   }
 
   const isValidFile = (file: File): boolean => {
