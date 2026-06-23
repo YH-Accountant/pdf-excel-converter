@@ -10,7 +10,7 @@ const anthropic = new Anthropic({
 // 문서 유형 자동 인식
 export async function detectDocumentType(base64Image: string, mediaType: string): Promise<DocumentType> {
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     messages: [
       {
@@ -113,7 +113,7 @@ export async function extractFromText(
 // 텍스트에서 문서 유형 자동 인식
 export async function detectDocumentTypeFromText(pdfText: string): Promise<DocumentType> {
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     messages: [
       {
@@ -165,7 +165,7 @@ export interface DocumentSection {
 // 텍스트에서 여러 문서 유형 감지 (PDF 내 복합 증빙 처리)
 export async function detectMultipleDocumentTypesFromText(pdfText: string): Promise<DocumentSection[]> {
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [
       {
@@ -292,7 +292,7 @@ async function extractWithTextTemplateForType(
   console.log(`=== ${template.label} 추출 시작 ===`)
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [
       {
@@ -343,7 +343,7 @@ export async function extractWithTextTemplate(
   console.log('텍스트 길이:', pdfText.length)
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [
       {
@@ -445,7 +445,7 @@ JSON 형식으로 응답해주세요. 찾을 수 없는 정보는 null로 표시
   })
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [
       {
