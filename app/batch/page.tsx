@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
+import { checkImageQuality } from '@/lib/imageQuality'
 
 interface ProcessingFile {
   file: File
@@ -140,7 +141,7 @@ export default function BatchPage() {
     }
   }
 
-  // 이미지 파일을 base64로 변환 (픽셀 수 기준 저화질 판단 후 필요 시 canvas 2배 확대)
+  // 이미지 파일을 base64로 변환 (해상도 + 선명도 기준 저화질 판단 후 필요 시 canvas 2배 확대)
   const convertImageToBase64 = async (imageFile: File): Promise<{ base64: string; mediaType: string }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -149,16 +150,16 @@ export default function BatchPage() {
         const originalBase64 = dataUrl.split(',')[1]
         const img = new Image()
         img.onload = () => {
-          const totalPixels = img.width * img.height
-          if (totalPixels < 1_000_000) {
-            console.log(`저화질 이미지 감지 (${img.width}×${img.height}) → canvas 2배 확대`)
+          const quality = checkImageQuality(img)
+          if (quality.isLow) {
+            console.log(`저화질 이미지 감지 [${quality.reason}] ${quality.detail} → canvas 2배 확대`)
             const canvas = document.createElement('canvas')
             canvas.width = img.width * 2
             canvas.height = img.height * 2
             canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
             resolve({ base64: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png' })
           } else {
-            console.log(`고화질 이미지 (${img.width}×${img.height}) → 원본 그대로 OCR`)
+            console.log(`고화질 이미지 ${quality.detail} → 원본 그대로 OCR`)
             resolve({ base64: originalBase64, mediaType: imageFile.type })
           }
         }
