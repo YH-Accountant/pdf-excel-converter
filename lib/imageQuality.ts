@@ -1,6 +1,6 @@
-const PIXEL_THRESHOLD = 1_000_000  // 1MP: 약 1000×1000
-const BLUR_THRESHOLD = 100          // Laplacian 분산 임계값
-const SAMPLE_SIZE = 200             // 선명도 측정용 축소 크기 (속도 최적화)
+const PIXEL_THRESHOLD = 2_000_000  // 2MP: 약 150 DPI 수준, 이하면 숫자 오인식 시작
+const BLUR_THRESHOLD = 200          // Laplacian 분산 임계값, 이하면 중간 흐릿 수준
+const SAMPLE_SIZE = 500             // 선명도 측정용 축소 크기 (클수록 중간 블러 감지 민감)
 
 function computeLaplacianVariance(img: HTMLImageElement): number {
   const scale = Math.min(1, SAMPLE_SIZE / Math.max(img.width, img.height))
