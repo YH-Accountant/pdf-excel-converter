@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
+import { checkImageQuality } from '@/lib/imageQuality'
 
 interface FileUploadProps {
   onFilesSelect: (files: File[], pdfText?: string) => void
@@ -150,7 +151,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
           console.log('=== 이미지 파일 처리 ===')
           setConversionStatus('이미지 OCR 처리 중...')
 
-          // 픽셀 수 기준으로 저화질 판단 후 필요 시 canvas로 2배 확대
+          // 해상도 + 선명도 기준으로 저화질 판단 후 필요 시 canvas로 2배 확대
           const imageData = await new Promise<{ base64: string; mediaType: string }>((resolve, reject) => {
             const reader = new FileReader()
             reader.onload = () => {
@@ -158,9 +159,9 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
               const originalBase64 = dataUrl.split(',')[1]
               const img = new Image()
               img.onload = () => {
-                const totalPixels = img.width * img.height
-                if (totalPixels < 1_000_000) {
-                  console.log(`저화질 이미지 감지 (${img.width}×${img.height}) → canvas 2배 확대`)
+                const quality = checkImageQuality(img)
+                if (quality.isLow) {
+                  console.log(`저화질 이미지 감지 [${quality.reason}] ${quality.detail} → canvas 2배 확대`)
                   setConversionStatus('저화질 이미지 확대 처리 중...')
                   const canvas = document.createElement('canvas')
                   canvas.width = img.width * 2
@@ -168,7 +169,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
                   canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
                   resolve({ base64: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png' })
                 } else {
-                  console.log(`고화질 이미지 (${img.width}×${img.height}) → 원본 그대로 OCR`)
+                  console.log(`고화질 이미지 ${quality.detail} → 원본 그대로 OCR`)
                   resolve({ base64: originalBase64, mediaType: file.type })
                 }
               }

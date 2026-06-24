@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>이미지 품질 테스트 생성기</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #111827; color: #f3f4f6; }
+    h1 { margin-bottom: 8px; }
+    .sub { color: #9ca3af; margin-bottom: 32px; font-size: 14px; }
+    .card { background: #1f2937; border-radius: 12px; padding: 24px; margin: 16px 0; border: 1px solid #374151; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+    .low  { background: #991b1b; color: #fee2e2; }
+    .high { background: #065f46; color: #d1fae5; }
+    .info { font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+    .log  { font-family: monospace; font-size: 12px; background: #111827; padding: 8px 12px; border-radius: 6px; color: #f59e0b; margin-bottom: 14px; }
+    canvas { border: 1px solid #374151; border-radius: 4px; max-width: 100%; display: block; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 12px; font-size: 14px; }
+    button:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <h1>테스트 이미지 생성기</h1>
+  <p class="sub">각 이미지를 다운로드 후 앱에 업로드하면 콘솔에서 판정 결과를 확인할 수 있습니다.</p>
+
+  <div class="card">
+    <div class="badge low">저화질 A — 해상도 부족</div>
+    <div class="info">500×400px (0.2MP) — 1MP 미만이므로 즉시 저화질 판정</div>
+    <div class="log">예상 콘솔: 저화질 이미지 감지 [resolution] 500×400 (0.20MP &lt; 1MP) → canvas 2배 확대</div>
+    <canvas id="c-low-res" width="500" height="400"></canvas>
+    <button onclick="dl('c-low-res','test_저화질_해상도부족_500x400.png')">PNG 다운로드</button>
+  </div>
+
+  <div class="card">
+    <div class="badge low">저화질 B — 선명도 부족 (블러)</div>
+    <div class="info">1500×1000px (1.5MP) — 픽셀 수는 충분하지만 심하게 흐릿함</div>
+    <div class="log">예상 콘솔: 저화질 이미지 감지 [blur] 1500×1000, 선명도 점수 XX.X &lt; 100 → canvas 2배 확대</div>
+    <canvas id="c-low-blur" width="1500" height="1000" style="max-width:500px"></canvas>
+    <button onclick="dl('c-low-blur','test_저화질_블러_1500x1000.png')">PNG 다운로드</button>
+  </div>
+
+  <div class="card">
+    <div class="badge high">고화질</div>
+    <div class="info">1600×1200px (1.92MP) — 픽셀 수 충분 + 선명한 텍스트</div>
+    <div class="log">예상 콘솔: 고화질 이미지 1600×1200, 선명도 점수 XXX.X → 원본 그대로 OCR</div>
+    <canvas id="c-high" width="1600" height="1200" style="max-width:500px"></canvas>
+    <button onclick="dl('c-high','test_고화질_1600x1200.png')">PNG 다운로드</button>
+  </div>
+
+  <script>
+    function drawDoc(ctx, w, h, title, blurPx) {
+      if (blurPx) ctx.filter = `blur(${blurPx}px)`
+
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+
+      ctx.fillStyle = '#1e3a5f'
+      ctx.fillRect(0, 0, w, h * 0.11)
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `bold ${Math.floor(h * 0.055)}px Arial`
+      ctx.textAlign = 'center'
+      ctx.fillText(title, w / 2, h * 0.075)
+
+      ctx.fillStyle = '#1a1a1a'
+      ctx.textAlign = 'left'
+      const fs = Math.floor(h * 0.038)
+      ctx.font = `${fs}px Arial`
+      const lh = h * 0.07
+      const x = w * 0.08
+      const lines = [
+        '계 약 서',
+        '',
+        '계약일자:   2024년 03월 15일',
+        '계약금액:   ₩1,234,567원',
+        '공급가액:   ₩1,122,334원',
+        '부  가  세:   ₩112,233원',
+        '',
+        '갑:  (주)테스트회사',
+        '을:  홍길동',
+        '',
+        '위 금액을 정히 계약함.',
+        '',
+        '2024. 03. 15',
+      ]
+      lines.forEach((line, i) => {
+        ctx.fillText(line, x, h * 0.18 + i * lh)
+      })
+
+      if (blurPx) ctx.filter = 'none'
+    }
+
+    // 저화질 A: 500×400 (해상도 부족)
+    drawDoc(document.getElementById('c-low-res').getContext('2d'), 500, 400, '계약서 (저화질-해상도)', 0)
+
+    // 저화질 B: 1500×1000, blur 40px (선명도 부족)
+    drawDoc(document.getElementById('c-low-blur').getContext('2d'), 1500, 1000, '계약서 (저화질-블러)', 40)
+
+    // 고화질: 1600×1200, 선명
+    drawDoc(document.getElementById('c-high').getContext('2d'), 1600, 1200, '계약서 (고화질)', 0)
+
+    function dl(id, filename) {
+      const a = document.createElement('a')
+      a.href = document.getElementById(id).toDataURL('image/png')
+      a.download = filename
+      a.click()
+    }
+  </script>
+</body>
+</html>
