@@ -1,4 +1,4 @@
-const PIXEL_THRESHOLD = 2_000_000  // 2MP: 약 150 DPI 수준, 이하면 숫자 오인식 시작
+const PIXEL_THRESHOLD = 1_500_000  // 1.5MP: 약 130 DPI 수준, 이하면 숫자 오인식 시작
 const BLUR_THRESHOLD = 200          // Laplacian 분산 임계값, 이하면 중간 흐릿 수준
 const SAMPLE_SIZE = 500             // 선명도 측정용 축소 크기 (클수록 중간 블러 감지 민감)
 
