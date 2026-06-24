@@ -42,7 +42,7 @@ export function checkImageQuality(img: HTMLImageElement): QualityResult {
     return {
       isLow: true,
       reason: 'resolution',
-      detail: `${img.width}×${img.height} (${(pixels / 1_000_000).toFixed(2)}MP < 1MP)`,
+      detail: `${img.width}×${img.height} (${(pixels / 1_000_000).toFixed(2)}MP < ${PIXEL_THRESHOLD / 1_000_000}MP)`,
     }
   }
 
