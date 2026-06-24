@@ -256,9 +256,13 @@ export default function BatchPage() {
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')
       } else {
-        // OCR 텍스트가 부족하면 Claude Vision 사용
+        // OCR 텍스트가 부족하면 Claude Vision 사용 (확대본 전송)
         console.log('OCR 텍스트 부족, Claude Vision 사용')
-        formData.append('file0', fileItem.file)
+        const binary = atob(imageData.base64)
+        const array = new Uint8Array(binary.length)
+        for (let j = 0; j < binary.length; j++) array[j] = binary.charCodeAt(j)
+        const blob = new Blob([array], { type: imageData.mediaType })
+        formData.append('file0', new File([blob], fileItem.file.name, { type: imageData.mediaType }))
         formData.append('fileCount', '1')
       }
     } else {
