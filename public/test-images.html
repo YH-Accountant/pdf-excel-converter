@@ -24,18 +24,18 @@
 
   <div class="card">
     <div class="badge low">저화질 A — 해상도 부족</div>
-    <div class="info">500×400px (0.2MP) — 1MP 미만이므로 즉시 저화질 판정</div>
-    <div class="log">예상 콘솔: 저화질 이미지 감지 [resolution] 500×400 (0.20MP &lt; 1MP) → canvas 2배 확대</div>
+    <div class="info">500×400px (0.2MP) — 2MP 미만이므로 즉시 저화질 판정</div>
+    <div class="log">예상 콘솔: 저화질 이미지 감지 [resolution] 500×400 (0.20MP &lt; 2MP) → canvas 2배 확대</div>
     <canvas id="c-low-res" width="500" height="400"></canvas>
     <button onclick="dl('c-low-res','test_저화질_해상도부족_500x400.png')">PNG 다운로드</button>
   </div>
 
   <div class="card">
     <div class="badge low">저화질 B — 선명도 부족 (블러)</div>
-    <div class="info">1500×1000px (1.5MP) — 픽셀 수는 충분하지만 심하게 흐릿함</div>
-    <div class="log">예상 콘솔: 저화질 이미지 감지 [blur] 1500×1000, 선명도 점수 XX.X &lt; 100 → canvas 2배 확대</div>
-    <canvas id="c-low-blur" width="1500" height="1000" style="max-width:500px"></canvas>
-    <button onclick="dl('c-low-blur','test_저화질_블러_1500x1000.png')">PNG 다운로드</button>
+    <div class="info">2200×1600px (3.5MP) — 픽셀 수는 충분하지만 흐릿함 (살짝 흔들린 사진 수준)</div>
+    <div class="log">예상 콘솔: 저화질 이미지 감지 [blur] 2200×1600, 선명도 점수 XX.X &lt; 200 → canvas 2배 확대</div>
+    <canvas id="c-low-blur" width="2200" height="1600" style="max-width:500px"></canvas>
+    <button onclick="dl('c-low-blur','test_저화질_블러_2200x1600.png')">PNG 다운로드</button>
   </div>
 
   <div class="card">
@@ -91,8 +91,8 @@
     // 저화질 A: 500×400 (해상도 부족)
     drawDoc(document.getElementById('c-low-res').getContext('2d'), 500, 400, '계약서 (저화질-해상도)', 0)
 
-    // 저화질 B: 1500×1000, blur 40px (선명도 부족)
-    drawDoc(document.getElementById('c-low-blur').getContext('2d'), 1500, 1000, '계약서 (저화질-블러)', 40)
+    // 저화질 B: 2200×1600, blur 12px (살짝 흔들린 사진 수준)
+    drawDoc(document.getElementById('c-low-blur').getContext('2d'), 2200, 1600, '계약서 (저화질-블러)', 12)
 
     // 고화질: 1600×1200, 선명
     drawDoc(document.getElementById('c-high').getContext('2d'), 1600, 1200, '계약서 (고화질)', 0)
