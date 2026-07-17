@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import * as pdfjsLib from 'pdfjs-dist'
 import XLSX from 'xlsx-js-style'
+import { matchEmployeesToTransactions, type EmployeeMatchResult } from '@/lib/payrollMatching'
 
 interface PayrollEmployee {
   name: string
@@ -44,13 +45,7 @@ interface WithholdingData {
   localIncomeTax: number
 }
 
-interface MatchResult {
-  name: string
-  payrollAmount: number
-  bankAmount: number
-  difference: number
-  isMatched: boolean
-}
+type MatchResult = EmployeeMatchResult
 
 interface MonthGroup {
   groupKey: string
@@ -686,22 +681,10 @@ export default function PayrollPage() {
           !!group.paymentMonth &&
           bankTransferMonths.every((m) => m === group.paymentMonth)
 
-        const individualMatches: MatchResult[] = []
+        let individualMatches: MatchResult[] = []
         if (group.payroll?.employees && group.payroll.employees.length > 0) {
-          for (const emp of group.payroll.employees) {
-            const allTx = group.bankList.flatMap((b) => b.transactions)
-            const matchedTx = allTx.find(
-              (tx: any) => tx.description?.includes(emp.name) || emp.name?.includes(tx.description)
-            )
-            const bankAmount = matchedTx?.withdrawal || 0
-            individualMatches.push({
-              name: emp.name,
-              payrollAmount: emp.netPay,
-              bankAmount,
-              difference: emp.netPay - bankAmount,
-              isMatched: bankAmount > 0 ? Math.abs(emp.netPay - bankAmount) < 100 : false,
-            })
-          }
+          const allTx = group.bankList.flatMap((b) => b.transactions)
+          individualMatches = matchEmployeesToTransactions(group.payroll.employees, allTx)
         }
 
         finalGroups.push({
@@ -1031,7 +1014,14 @@ export default function PayrollPage() {
                                 <tbody>
                                   {group.individualMatches.map((match, matchIdx) => (
                                     <tr key={matchIdx} className="border-b border-gray-100 last:border-0">
-                                      <td className="py-2 px-2">{match.name}</td>
+                                      <td className="py-2 px-2">
+                                        {match.name}
+                                        {match.isDuplicateName && (
+                                          <span className="ml-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                                            동명이인 · 확인 요망
+                                          </span>
+                                        )}
+                                      </td>
                                       <td className="text-right py-2 px-2 tabular-nums">{formatNumber(match.payrollAmount)}</td>
                                       <td className="text-right py-2 px-2 tabular-nums">
                                         {match.bankAmount > 0 ? formatNumber(match.bankAmount) : '-'}
@@ -1052,6 +1042,8 @@ export default function PayrollPage() {
                               </table>
                               <p className="text-xs text-gray-400 mt-3">
                                 * 통장 적요에 직원 이름이 포함된 경우에만 개인별 매칭이 가능합니다.
+                                <br />
+                                * 동명이인은 금액 기준으로 배정하므로, 개별 귀속은 원본 증빙으로 확인이 필요합니다.
                               </p>
                             </div>
                           </td>
