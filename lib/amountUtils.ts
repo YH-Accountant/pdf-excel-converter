@@ -56,9 +56,9 @@ export function koreanToNumber(korean: string): number {
   // 원, 정 등 단위 제거
   korean = korean.replace(/[원정]/g, '').trim()
 
-  let result = 0
-  let current = 0
-  let temp = 0
+  let result = 0   // 만/억/조 단위로 확정된 값
+  let section = 0  // 현재 만 단위 블록의 누적값 (예: "이천육백사십" → 2640)
+  let digit = 0    // 마지막으로 읽은 한 자리 숫자 (다음 십/백/천의 배수)
 
   for (const char of korean) {
     const value = koreanNumbers[char]
@@ -66,27 +66,23 @@ export function koreanToNumber(korean: string): number {
     if (value === undefined) continue
 
     if (value >= 10000) {
-      // 만, 억, 조
-      if (temp === 0) temp = 1
-      current += temp
-      result += current * value
-      current = 0
-      temp = 0
+      // 만, 억, 조: 현재 블록을 확정하고 초기화 ("만"처럼 숫자 생략 시 1로 간주)
+      section += digit
+      if (section === 0) section = 1
+      result += section * value
+      section = 0
+      digit = 0
     } else if (value >= 10) {
-      // 십, 백, 천
-      if (temp === 0) temp = 1
-      temp *= value
+      // 십, 백, 천: 앞의 숫자와 곱해 블록에 누적 ("천"처럼 숫자 생략 시 1로 간주)
+      section += (digit === 0 ? 1 : digit) * value
+      digit = 0
     } else {
       // 일~구
-      temp = value
+      digit = value
     }
   }
 
-  // 남은 값 더하기
-  if (temp > 0) current += temp
-  result += current
-
-  return result
+  return result + section + digit
 }
 
 // 금액 문자열에서 숫자 추출
@@ -101,8 +97,12 @@ export function extractNumberFromAmount(amountStr: string): number | null {
 
 // 금액 문자열에서 한글 금액 추출
 export function extractKoreanFromAmount(amountStr: string): string | null {
+  // "일금 오백만원정" 관용구의 "일금"은 금액이 아니므로 제거 후 매칭
+  // (제거하지 않으면 "일"만 매칭되어 1원으로 오인식됨)
+  const cleaned = amountStr.replace(/일금\s*/g, '')
+
   // 한글 금액 패턴 매칭 (예: 육십억원, 오천만원)
-  const koreanMatch = amountStr.match(/[일이삼사오육칠팔구십백천만억조]+\s*원?정?/)
+  const koreanMatch = cleaned.match(/[일이삼사오육칠팔구십백천만억조]+\s*원?정?/)
   if (koreanMatch) {
     return koreanMatch[0]
   }
@@ -148,10 +148,12 @@ export function validateAndCorrectAmount(amountStr: string): string {
 export function validateAmountFields(
   fields: Record<string, string | number | null>
 ): Record<string, string | number | null> {
+  // unitPrice(단가)는 교정 대상에서 제외: "품목A: 15,000, 품목B: 2,000,000"처럼
+  // 여러 품목의 단가가 한 필드에 올 수 있어, 단일 금액 교정을 거치면 첫 숫자만 남는다
   const amountFieldNames = [
     'contractAmount', 'totalAmount', 'supplyValue', 'taxAmount',
     'amount', 'debit', 'credit', 'deposit', 'withdrawal', 'balance',
-    'unitPrice', 'totalPayment', 'incomeTax', 'localIncomeTax'
+    'totalPayment', 'incomeTax', 'localIncomeTax'
   ]
 
   const correctedFields = { ...fields }
