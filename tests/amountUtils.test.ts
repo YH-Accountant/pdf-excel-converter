@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { koreanToNumber, numberToKorean, validateAndCorrectAmount } from '../lib/amountUtils.ts'
+import { koreanToNumber, numberToKorean, validateAndCorrectAmount, validateAmountFields } from '../lib/amountUtils.ts'
 
 test('koreanToNumber: 단순 금액', () => {
   assert.equal(koreanToNumber('오백만원'), 5_000_000)
@@ -55,4 +55,29 @@ test('validateAndCorrectAmount: 한글-숫자 불일치 시 한글 기준으로 
     validateAndCorrectAmount('오백만원(4,500,000원)'),
     '오백만원(5,000,000원)'
   )
+})
+
+test('validateAndCorrectAmount: "일금 ~ 정" 관용구의 일금을 금액으로 오인하지 않음', () => {
+  assert.equal(
+    validateAndCorrectAmount('일금 오백만원정'),
+    '오백만원정(5,000,000원)'
+  )
+  assert.equal(
+    validateAndCorrectAmount('일금 삼천오백만원정 (₩35,000,000)'),
+    '삼천오백만원정(35,000,000원)'
+  )
+  // "일금 일천만원": 일금 제거 후에도 진짜 금액의 "일"은 정상 파싱
+  assert.equal(
+    validateAndCorrectAmount('일금 일천만원정'),
+    '일천만원정(10,000,000원)'
+  )
+})
+
+test('validateAmountFields: 여러 품목 단가(unitPrice)는 교정하지 않고 원본 유지', () => {
+  const result = validateAmountFields({
+    unitPrice: '품목A: 15,000, 품목B: 2,000,000',
+    totalAmount: '이천만원(20,000,000원)',
+  })
+  assert.equal(result.unitPrice, '품목A: 15,000, 품목B: 2,000,000')
+  assert.equal(result.totalAmount, '이천만원(20,000,000원)')
 })

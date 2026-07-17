@@ -97,8 +97,12 @@ export function extractNumberFromAmount(amountStr: string): number | null {
 
 // 금액 문자열에서 한글 금액 추출
 export function extractKoreanFromAmount(amountStr: string): string | null {
+  // "일금 오백만원정" 관용구의 "일금"은 금액이 아니므로 제거 후 매칭
+  // (제거하지 않으면 "일"만 매칭되어 1원으로 오인식됨)
+  const cleaned = amountStr.replace(/일금\s*/g, '')
+
   // 한글 금액 패턴 매칭 (예: 육십억원, 오천만원)
-  const koreanMatch = amountStr.match(/[일이삼사오육칠팔구십백천만억조]+\s*원?정?/)
+  const koreanMatch = cleaned.match(/[일이삼사오육칠팔구십백천만억조]+\s*원?정?/)
   if (koreanMatch) {
     return koreanMatch[0]
   }
@@ -144,10 +148,12 @@ export function validateAndCorrectAmount(amountStr: string): string {
 export function validateAmountFields(
   fields: Record<string, string | number | null>
 ): Record<string, string | number | null> {
+  // unitPrice(단가)는 교정 대상에서 제외: "품목A: 15,000, 품목B: 2,000,000"처럼
+  // 여러 품목의 단가가 한 필드에 올 수 있어, 단일 금액 교정을 거치면 첫 숫자만 남는다
   const amountFieldNames = [
     'contractAmount', 'totalAmount', 'supplyValue', 'taxAmount',
     'amount', 'debit', 'credit', 'deposit', 'withdrawal', 'balance',
-    'unitPrice', 'totalPayment', 'incomeTax', 'localIncomeTax'
+    'totalPayment', 'incomeTax', 'localIncomeTax'
   ]
 
   const correctedFields = { ...fields }
