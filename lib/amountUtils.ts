@@ -56,9 +56,9 @@ export function koreanToNumber(korean: string): number {
   // 원, 정 등 단위 제거
   korean = korean.replace(/[원정]/g, '').trim()
 
-  let result = 0
-  let current = 0
-  let temp = 0
+  let result = 0   // 만/억/조 단위로 확정된 값
+  let section = 0  // 현재 만 단위 블록의 누적값 (예: "이천육백사십" → 2640)
+  let digit = 0    // 마지막으로 읽은 한 자리 숫자 (다음 십/백/천의 배수)
 
   for (const char of korean) {
     const value = koreanNumbers[char]
@@ -66,27 +66,23 @@ export function koreanToNumber(korean: string): number {
     if (value === undefined) continue
 
     if (value >= 10000) {
-      // 만, 억, 조
-      if (temp === 0) temp = 1
-      current += temp
-      result += current * value
-      current = 0
-      temp = 0
+      // 만, 억, 조: 현재 블록을 확정하고 초기화 ("만"처럼 숫자 생략 시 1로 간주)
+      section += digit
+      if (section === 0) section = 1
+      result += section * value
+      section = 0
+      digit = 0
     } else if (value >= 10) {
-      // 십, 백, 천
-      if (temp === 0) temp = 1
-      temp *= value
+      // 십, 백, 천: 앞의 숫자와 곱해 블록에 누적 ("천"처럼 숫자 생략 시 1로 간주)
+      section += (digit === 0 ? 1 : digit) * value
+      digit = 0
     } else {
       // 일~구
-      temp = value
+      digit = value
     }
   }
 
-  // 남은 값 더하기
-  if (temp > 0) current += temp
-  result += current
-
-  return result
+  return result + section + digit
 }
 
 // 금액 문자열에서 숫자 추출
