@@ -1,6 +1,6 @@
 'use client'
 
-import { ExtractedData, DocumentType, AccountingEntry } from '@/app/single/page'
+import { ExtractedData, DocumentType } from '@/app/single/page'
 import XLSX from 'xlsx-js-style'
 
 interface ExcelDownloadProps {
@@ -12,7 +12,6 @@ const documentTypeLabels: Record<DocumentType, string> = {
   contract: '계약서',
   taxInvoice: '세금계산서',
   tradingStatement: '거래명세서',
-  accountingSlip: '회계전표',
   bankStatement: '통장입출금내역',
   assetDisposal: '취득처분전표',
   withholdingTax: '원천징수신고서',
@@ -38,18 +37,14 @@ const fieldLabels: Record<string, string> = {
   supplyValue: '공급가액',
   taxAmount: '부가세',
   totalAmount: '총액/합계',
-  unpaidAmount: '미지급금',
   // 거래명세서
   tradingPartner: '거래처',
   tradingDate: '거래일',
   quantity: '수량',
   unitPrice: '단가',
-  // 회계전표
+  // 공통 (취득처분전표 등에서 사용)
   slipNumber: '전표번호',
-  slipDate: '일자',
   accountCode: '계정과목',
-  debit: '차변',
-  credit: '대변',
   description: '적요',
   // 통장 입출금내역
   transactionDate: '거래일',
@@ -105,7 +100,7 @@ const cellStyle = {
   alignment: { vertical: 'center', wrapText: true },
 }
 
-// 미지급금 볼드 스타일
+// 강조 볼드 스타일
 const boldCellStyle = {
   border: {
     top: { style: 'thin', color: { rgb: 'CCCCCC' } },
@@ -139,157 +134,73 @@ const formatLongText = (value: string): string => {
   return value.replace(/\. (?![0-9])/g, '.\n')
 }
 
-// 회계전표 분개 테이블 헤더 스타일
-const entryHeaderStyle = {
-  fill: { fgColor: { rgb: '4472C4' } },
-  font: { bold: true, color: { rgb: 'FFFFFF' } },
-  border: {
-    top: { style: 'thin', color: { rgb: '000000' } },
-    bottom: { style: 'thin', color: { rgb: '000000' } },
-    left: { style: 'thin', color: { rgb: '000000' } },
-    right: { style: 'thin', color: { rgb: '000000' } },
-  },
-  alignment: { vertical: 'center', horizontal: 'center' },
-}
-
 export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new()
 
-    // 회계전표이고 entries가 있는 경우 특별 처리
-    if (data.documentType === 'accountingSlip' && data.fields.entries && Array.isArray(data.fields.entries)) {
-      const entries = data.fields.entries as AccountingEntry[]
+    const rows: any[][] = [['항목', '값']]
 
-      // 기본 정보 시트
-      const infoRows: any[][] = [['항목', '값']]
-      infoRows.push(['전표번호', data.fields.slipNumber || ''])
-      infoRows.push(['일자', data.fields.slipDate || ''])
-      infoRows.push(['분개 라인 수', `${entries.length}줄`])
+    const longTextFields = ['contractContent', 'description', 'transactionContent']
+    const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'acquisitionCost', 'disposalPrice']
+    const boldFields: string[] = []
+    const boldRowIndices: number[] = []
 
-      const infoWs = XLSX.utils.aoa_to_sheet(infoRows)
-      infoWs['!cols'] = [{ wch: 15 }, { wch: 30 }]
+    Object.entries(data.fields).forEach(([key, value], index) => {
+      const label = fieldLabels[key] || key
+      let formattedValue = formatArrayValue(value)
 
-      // 스타일 적용
-      for (let R = 0; R <= 3; R++) {
-        for (let C = 0; C <= 1; C++) {
-          const addr = XLSX.utils.encode_cell({ r: R, c: C })
-          if (infoWs[addr]) {
-            infoWs[addr].s = R === 0 ? headerStyle : cellStyle
-          }
-        }
+      if (numberFields.includes(key)) {
+        formattedValue = formatNumber(value)
       }
 
-      XLSX.utils.book_append_sheet(wb, infoWs, '전표정보')
-
-      // 분개 내역 시트
-      const entryRows: any[][] = [['계정과목', '차변', '대변', '적요']]
-      let totalDebit = 0
-      let totalCredit = 0
-
-      entries.forEach((entry) => {
-        entryRows.push([
-          entry.accountCode || '',
-          entry.debit ? formatNumber(entry.debit) : '',
-          entry.credit ? formatNumber(entry.credit) : '',
-          entry.description || '',
-        ])
-        totalDebit += entry.debit || 0
-        totalCredit += entry.credit || 0
-      })
-
-      // 합계 행 추가
-      entryRows.push(['합계', formatNumber(totalDebit), formatNumber(totalCredit), totalDebit === totalCredit ? '대차일치' : '대차불일치'])
-
-      const entryWs = XLSX.utils.aoa_to_sheet(entryRows)
-      entryWs['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 40 }]
-
-      // 스타일 적용
-      const entryRange = XLSX.utils.decode_range(entryWs['!ref'] || 'A1')
-      for (let R = entryRange.s.r; R <= entryRange.e.r; R++) {
-        for (let C = entryRange.s.c; C <= entryRange.e.c; C++) {
-          const addr = XLSX.utils.encode_cell({ r: R, c: C })
-          if (entryWs[addr]) {
-            if (R === 0) {
-              entryWs[addr].s = entryHeaderStyle
-            } else if (R === entryRange.e.r) {
-              entryWs[addr].s = boldCellStyle
-            } else {
-              entryWs[addr].s = cellStyle
-            }
-          }
-        }
+      if (longTextFields.includes(key) && typeof formattedValue === 'string') {
+        formattedValue = formatLongText(formattedValue)
       }
 
-      XLSX.utils.book_append_sheet(wb, entryWs, '분개내역')
-    } else {
-      // 기존 로직: 다른 문서 유형
-      const rows: any[][] = [['항목', '값']]
+      if (boldFields.includes(key) && value) {
+        boldRowIndices.push(rows.length)
+      }
 
-      const longTextFields = ['contractContent', 'description', 'transactionContent']
-      const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'unpaidAmount', 'deposit', 'withdrawal', 'balance', 'debit', 'credit', 'incomeTax', 'localIncomeTax', 'totalPayment', 'acquisitionCost', 'disposalPrice']
-      const boldFields = ['unpaidAmount']
-      const boldRowIndices: number[] = []
+      rows.push([label, formattedValue])
+    })
 
-      Object.entries(data.fields).forEach(([key, value], index) => {
-        // entries 필드는 스킵 (회계전표용)
-        if (key === 'entries') return
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols'] = [{ wch: 20 }, { wch: 80 }]
 
-        const label = fieldLabels[key] || key
-        let formattedValue = formatArrayValue(value)
+    const rowHeights: { hpt: number }[] = [{ hpt: 25 }]
+    Object.entries(data.fields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        rowHeights.push({ hpt: Math.max(25, value.length * 20) })
+      } else if (longTextFields.includes(key) && typeof value === 'string') {
+        const sentenceCount = (value.match(/\. /g) || []).length + 1
+        rowHeights.push({ hpt: Math.max(25, sentenceCount * 20) })
+      } else if (typeof value === 'string' && value.includes('\n')) {
+        const lineCount = (value.match(/\n/g) || []).length + 1
+        rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
+      } else {
+        rowHeights.push({ hpt: 25 })
+      }
+    })
+    ws['!rows'] = rowHeights
 
-        if (numberFields.includes(key)) {
-          formattedValue = formatNumber(value)
-        }
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
+        if (!ws[cellAddress]) continue
 
-        if (longTextFields.includes(key) && typeof formattedValue === 'string') {
-          formattedValue = formatLongText(formattedValue)
-        }
-
-        if (boldFields.includes(key) && value) {
-          boldRowIndices.push(rows.length)
-        }
-
-        rows.push([label, formattedValue])
-      })
-
-      const ws = XLSX.utils.aoa_to_sheet(rows)
-      ws['!cols'] = [{ wch: 20 }, { wch: 80 }]
-
-      const rowHeights: { hpt: number }[] = [{ hpt: 25 }]
-      Object.entries(data.fields).forEach(([key, value]) => {
-        if (key === 'entries') return
-        if (Array.isArray(value)) {
-          rowHeights.push({ hpt: Math.max(25, value.length * 20) })
-        } else if (longTextFields.includes(key) && typeof value === 'string') {
-          const sentenceCount = (value.match(/\. /g) || []).length + 1
-          rowHeights.push({ hpt: Math.max(25, sentenceCount * 20) })
-        } else if (typeof value === 'string' && value.includes('\n')) {
-          const lineCount = (value.match(/\n/g) || []).length + 1
-          rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
+        if (R === 0) {
+          ws[cellAddress].s = headerStyle
+        } else if (boldRowIndices.includes(R)) {
+          ws[cellAddress].s = boldCellStyle
         } else {
-          rowHeights.push({ hpt: 25 })
-        }
-      })
-      ws['!rows'] = rowHeights
-
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-      for (let R = range.s.r; R <= range.e.r; R++) {
-        for (let C = range.s.c; C <= range.e.c; C++) {
-          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
-          if (!ws[cellAddress]) continue
-
-          if (R === 0) {
-            ws[cellAddress].s = headerStyle
-          } else if (boldRowIndices.includes(R)) {
-            ws[cellAddress].s = boldCellStyle
-          } else {
-            ws[cellAddress].s = cellStyle
-          }
+          ws[cellAddress].s = cellStyle
         }
       }
-
-      XLSX.utils.book_append_sheet(wb, ws, documentTypeLabels[data.documentType])
     }
+
+    XLSX.utils.book_append_sheet(wb, ws, documentTypeLabels[data.documentType])
+
 
     // 파일 이름 생성
     const baseFileName = fileName?.replace(/\.[^/.]+$/, '') || '추출결과'
