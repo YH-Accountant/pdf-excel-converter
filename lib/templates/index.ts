@@ -435,6 +435,7 @@ export const documentTemplates: Record<DocumentType, {
 4. employees (직원 목록) ★ 핵심 필드
    - 배열 형식으로 모든 직원 정보 추출
    - 각 직원: name(성명), baseSalary(기본급), allowances(수당합계), grossPay(지급총액), deductions(공제총액), netPay(실지급액)
+   - 성명 없이 사번만 기재된 급여대장이면 사번을 name에 그대로 기재 (예: "1001")
    - netPay(실지급액)가 가장 중요! 반드시 추출할 것
 
    예시:
@@ -485,5 +486,15 @@ export const documentTypeDetectionPrompt = `이 문서의 유형을 판별해주
 - withholdingTax: 급여원천징수이행상황신고서 또는 원천징수영수증 (급여 관련 원천징수 문서)
 - estimate: 견적서
 - payroll: 급여대장 (급여명세서, 급여지급내역, 급여대장 등)
+
+[견적서 vs 계약서 구분 기준 — 제목이 아니라 문서의 법적 상태로 판단할 것]
+- contract(계약서): 쌍방이 이미 합의·확약한 문서
+  * 양측 기명날인/서명, "계약을 체결한다", "확약한다" 등의 합의 표현
+  * 위약, 해지, 손해배상 등 이행 단계의 조항이 존재
+- estimate(견적서): 일방이 조건을 제시하고 상대의 회신을 기다리는 문서
+  * "유효기간 30일", "제안합니다", "회신 바랍니다" 등 제안 단계 표현
+  * 아직 상대방의 서명/날인이 없음 (미체결)
+- 주의: "공급계약 견적서"처럼 제목에 "계약"이 섞여 있어도,
+  아직 체결 전 제안 상태이면 estimate로 판단
 
 JSON 형식으로 응답해주세요: { "documentType": "선택한유형" }`
