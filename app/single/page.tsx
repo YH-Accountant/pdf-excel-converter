@@ -11,35 +11,19 @@ export type DocumentType =
   | 'contract'           // 계약서
   | 'taxInvoice'         // 세금계산서
   | 'tradingStatement'   // 거래명세서
-  | 'accountingSlip'     // 회계전표
   | 'bankStatement'      // 통장 입출금내역
   | 'assetDisposal'      // 취득처분전표
   | 'withholdingTax'     // 급여원천징수이행상황신고서
   | 'estimate'           // 견적서
   | 'payroll'            // 급여대장
 
-// 회계전표 분개 라인 타입
-export interface AccountingEntry {
-  accountCode: string
-  debit: number
-  credit: number
-  description: string
-}
-
-// 회계전표 슬립 타입 (여러 전표를 담는 배열용)
-export interface AccountingSlip {
-  slipNumber: string
-  slipDate: string
-  entries: AccountingEntry[]
-}
-
 export interface ExtractedData {
   documentType: DocumentType
-  fields: Record<string, string | number | null | AccountingEntry[] | AccountingSlip[]>
+  fields: Record<string, any>
   rawText?: string
 }
 
-const docTypes = ['계약서', '세금계산서', '거래명세서', '회계전표', '통장 입출금내역', '취득처분전표', '원천징수신고서', '견적서']
+const docTypes = ['계약서', '세금계산서', '거래명세서', '통장 입출금내역', '취득처분전표', '원천징수신고서', '견적서']
 
 export default function SinglePage() {
   const [files, setFiles] = useState<File[]>([])
