@@ -50,9 +50,9 @@ const fieldLabels: Record<string, string> = {
   transactionDate: '거래일',
   deposit: '입금',
   withdrawal: '출금',
-  balance: '잔액',
+  sender: '보내는분',
+  recipient: '받는분',
   transactionContent: '거래내용',
-  counterparty: '상대방',
   // 자산취득처분 (transactionDate, accountCode, slipNumber는 위에서 정의됨)
   transactionType: '거래유형',
   assetCategory: '자산분류',

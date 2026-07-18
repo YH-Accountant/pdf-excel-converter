@@ -55,9 +55,9 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
     { key: 'transactionDate', label: '거래일' },
     { key: 'deposit', label: '입금' },
     { key: 'withdrawal', label: '출금' },
-    { key: 'balance', label: '잔액' },
+    { key: 'sender', label: '보내는분' },
+    { key: 'recipient', label: '받는분' },
     { key: 'transactionContent', label: '거래내용' },
-    { key: 'counterparty', label: '상대방' },
   ],
   assetDisposal: [
     { key: '_rowNumber', label: 'No.' },
