@@ -30,9 +30,11 @@ export const documentTemplates: Record<DocumentType, {
    - YYYY-MM-DD 형식
    - 계약 체결일 또는 계약서 작성일
 
-4. contractContent (계약 내용)
-   - 계약의 목적과 핵심 내용을 2-3문장으로 요약
-   - 예: "OO 제품 공급 계약. 갑이 을에게 월 100개의 제품을 공급하고 을은 대금을 지급함."
+4. contractContent (계약 내용) — 거래의 실체만
+   - 누가·누구에게·무엇을(용역 또는 공급의 범위)을 서술
+   - ★ 금액과 기간은 별도 항목(contractAmount, contractPeriod)에 있으므로 여기서는 제외
+   - 문장이 끝날 때(온점 .)마다 줄바꿈(\n)으로 구분
+   - 예: "(주)OO(갑)가 (주)XX(을)에게 생산설비 정기 유지보수 용역을 위탁하는 계약.\n을은 정기 점검과 긴급 A/S를 수행하며, 내부통제제도 직접 설계는 범위에서 제외된다."
 
 5. contractAmount (계약 금액)
    - 형식: "한글금액(숫자, VAT 별도/포함)"
@@ -47,11 +49,17 @@ export const documentTemplates: Record<DocumentType, {
    - 예: "팔천오백삼십만원(85,300,000원, VAT 별도)"
    - 금액이 명시되지 않은 경우: "명시되지 않음"
 
-6. contractTerms (주요 계약 조건)
-   - 핵심 조건만 3-5개 항목으로 요약
-   - 반드시 각 조건을 줄바꿈(\n)으로 구분
+6. contractTerms (주요 계약 조건) — 재무·리스크에 영향을 주는 조항 우선
+   - 다음 기준으로 중요한 조항을 3~5개 선별하여 추출:
+     ① 금액·지급·시기에 영향: 지급조건(선금/중도금/잔금), 지급시기, 지체상금, 검수·인수 기준, 위약금
+     ② 우발부채·보증: 손해배상 책임한도, 하자보증(보증기간), 담보·이행보증금
+     ③ 비표준·특이 조항: 자동연장, 과도한 책임, 일방적 해지권 등
+   - 소유권 이전 시점, 비밀유지, 분쟁관할도 계약에 있으면 포함
+   - ★ 용역/공급의 범위(무엇을 하는가)는 contractContent에만 넣고 여기서는 반복하지 말 것
+   - 일반적 보일러플레이트(성실 이행 의무, 통지 방법 등 어느 계약에나 있는 조항)는 제외
+   - 각 조건을 줄바꿈(\n)으로 구분
    - 형식: "1) 조건1\n2) 조건2\n3) 조건3"
-   - 예: "1) 납품기한: 30일 이내\n2) 대금지급: 납품 후 30일\n3) 하자보증: 1년"
+   - 예: "1) 대금지급: 세금계산서 발행 후 30일 이내\n2) 책임한도: 을의 배상 상한은 기지급 대금\n3) 소유권: 대금 완납 시 결과물 갑에게 이전\n4) 해지: 위반 후 14일 미시정 시 해지 가능"
 
 7. contractPeriod (계약 기간)
    - 시작일 ~ 종료일 형식
@@ -108,8 +116,9 @@ export const documentTemplates: Record<DocumentType, {
 
 [추출 규칙]
 1. supplier (공급자)
-   - 사업자등록번호와 함께 표기
-   - 예: "주식회사 OO (123-45-67890)"
+   - 사업자등록번호가 있으면 상호와 함께 표기. 예: "주식회사 OO (123-45-67890)"
+   - ★ 거래명세서는 사업자등록번호가 없는 경우가 흔함. 없으면 상호만 기재하고
+     "미확인", "null" 같은 문구를 붙이지 말 것. 예: "주식회사 OO"
 
 2. tradingPartner (거래처명)
    - 거래 상대방 회사명 또는 상호
@@ -143,7 +152,7 @@ export const documentTemplates: Record<DocumentType, {
 
   bankStatement: {
     label: '통장 입출금내역',
-    fields: ['companyDivision', 'transactionDate', 'deposit', 'withdrawal', 'balance', 'transactionContent', 'counterparty', 'transactions', 'totalWithdrawal'],
+    fields: ['companyDivision', 'transactionDate', 'deposit', 'withdrawal', 'sender', 'recipient', 'transactionContent', 'transactions', 'totalWithdrawal'],
     prompt: `당신은 통장 입출금내역/이체확인증 분석 전문가입니다. 아래 문서에서 핵심 정보를 정확하게 추출해주세요.
 
 [문서 유형]
@@ -171,12 +180,15 @@ export const documentTemplates: Record<DocumentType, {
    - 거래내역조회인 경우만 배열로 추출
    - 각 거래: { "description": "적요/기재내용", "withdrawal": 출금액 }
 
-4. deposit (입금액) / withdrawal (출금액) / balance (잔액)
+4. deposit (입금액) / withdrawal (출금액)
    - 숫자만 (콤마 없이), 없으면 null
+   - 한 거래는 입금 또는 출금 중 하나만 값이 있음
 
-5. transactionContent (거래 내용): 거래 적요 또는 메모
+5. sender (보내는분): 입금 거래에서 돈을 보낸 사람/회사 (송금인·의뢰인). 없으면 null
 
-6. counterparty (거래 상대방): 입금자 또는 출금 대상
+6. recipient (받는분): 출금 거래에서 돈을 받은 사람/회사 (수취인). 없으면 null
+
+7. transactionContent (거래 내용): 거래 적요 또는 메모
 
 [여러 달 이체확인증 처리 ★ 중요]
 이체일시가 여러 개인 경우(여러 달 묶음) → 반드시 isMultipleDocuments: true로 각 달 별도 반환
