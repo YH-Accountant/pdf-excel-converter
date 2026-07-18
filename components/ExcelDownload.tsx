@@ -65,6 +65,8 @@ const fieldLabels: Record<string, string> = {
   totalPayment: '총지급액',
   incomeTax: '소득세',
   localIncomeTax: '지방소득세',
+  withholdingAgent: '징수의무자',
+  businessNumber: '사업자등록번호',
   // 견적서
   createdDate: '작성일',
   validityPeriod: '유효기간',
@@ -134,6 +136,22 @@ const formatLongText = (value: string): string => {
   return value.replace(/\. (?![0-9])/g, '.\n')
 }
 
+// 품목별 다행 필드 (한 줄에 하나씩, 숫자 줄은 천 단위 콤마)
+const multiLineItemFields = ['items', 'quantity', 'unitPrice']
+const formatMultiLineField = (value: any): string => {
+  if (value === null || value === undefined || value === '') return ''
+  const raw = String(value)
+  const lines = raw.includes('\n') ? raw.split('\n') : raw.split(/,\s*/)
+  return lines
+    .map((line) => {
+      const t = line.trim()
+      if (t === '') return ''
+      const num = parseFloat(t.replace(/,/g, ''))
+      return !isNaN(num) && /^[\d,]+$/.test(t) ? num.toLocaleString('ko-KR') : t
+    })
+    .join('\n')
+}
+
 export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new()
@@ -149,7 +167,9 @@ export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
       const label = fieldLabels[key] || key
       let formattedValue = formatArrayValue(value)
 
-      if (numberFields.includes(key)) {
+      if (multiLineItemFields.includes(key)) {
+        formattedValue = formatMultiLineField(value)
+      } else if (numberFields.includes(key)) {
         formattedValue = formatNumber(value)
       }
 
@@ -171,6 +191,9 @@ export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
     Object.entries(data.fields).forEach(([key, value]) => {
       if (Array.isArray(value)) {
         rowHeights.push({ hpt: Math.max(25, value.length * 20) })
+      } else if (multiLineItemFields.includes(key)) {
+        const lineCount = (formatMultiLineField(value).match(/\n/g) || []).length + 1
+        rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
       } else if (longTextFields.includes(key) && typeof value === 'string') {
         const sentenceCount = (value.match(/\. /g) || []).length + 1
         rowHeights.push({ hpt: Math.max(25, sentenceCount * 20) })
