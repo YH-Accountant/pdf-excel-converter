@@ -66,8 +66,10 @@ export const documentTemplates: Record<DocumentType, {
 
   taxInvoice: {
     label: '세금계산서',
-    fields: ['supplier', 'receiver', 'issueDate', 'items', 'supplyValue', 'taxAmount', 'totalAmount', 'unpaidAmount'],
-    prompt: `당신은 세금계산서 분석 전문가입니다. 아래 세금계산서에서 핵심 정보를 정확하게 추출해주세요.
+    // 부가가치세법 제32조 필수 기재사항 기준: 공급자·공급받는자 등록번호, 작성연월일, 공급가액, 세액
+    // totalAmount(합계금액)는 표준 서식 기재 항목이자 공급가액+세액 검증용으로 유지
+    fields: ['supplier', 'receiver', 'issueDate', 'supplyValue', 'taxAmount', 'totalAmount'],
+    prompt: `당신은 세금계산서 분석 전문가입니다. 아래 세금계산서에서 법정 필수 기재사항을 정확하게 추출해주세요.
 
 [추출 규칙]
 1. supplier (공급자)
@@ -81,30 +83,22 @@ export const documentTemplates: Record<DocumentType, {
 3. issueDate (작성일)
    - YYYY-MM-DD 형식
 
-4. items (품목)
-   - 주요 품목명 나열
-   - 여러 개인 경우 콤마로 구분
-
-5. supplyValue (공급가액)
+4. supplyValue (공급가액)
    - 숫자만 (콤마 없이)
    - 예: 10000000
 
-6. taxAmount (부가세)
+5. taxAmount (부가세)
    - 숫자만 (콤마 없이)
    - 예: 1000000
 
-7. totalAmount (총액)
+6. totalAmount (합계금액)
    - 공급가액 + 부가세
    - 숫자만 (콤마 없이)
    - 예: 11000000
 
-8. unpaidAmount (미지급금)
-   - 미지급 금액이 있는 경우에만 기재
-   - 숫자만 (콤마 없이)
-   - 없으면 null
-
 [중요]
-- 문서에서 명확히 확인되지 않는 정보는 null로 표시`
+- 문서에서 명확히 확인되지 않는 정보는 null로 표시
+- 합계금액이 공급가액+세액과 일치하는지 확인할 것`
   },
 
   tradingStatement: {
@@ -140,48 +134,6 @@ export const documentTemplates: Record<DocumentType, {
    - 예: "일천만원(10,000,000원, VAT 별도)"
 
 [중요]
-- 문서에서 명확히 확인되지 않는 정보는 null로 표시`
-  },
-
-  accountingSlip: {
-    label: '회계전표',
-    fields: ['slips'],
-    prompt: `당신은 회계전표 분석 전문가입니다. 아래 회계전표에서 핵심 정보를 정확하게 추출해주세요.
-
-[중요] 문서에 여러 개의 전표가 있으면 "slips" 배열에 모두 포함해야 합니다!
-
-[추출 규칙]
-각 전표마다 다음 정보를 추출:
-1. slipNumber (전표번호) - 문서에 기재된 전표번호 그대로
-2. slipDate (전표일자) - YYYY-MM-DD 형식
-3. entries (분개 내역) - 배열 형식
-   - 각 라인: accountCode(계정과목), debit(차변, 숫자), credit(대변, 숫자), description(적요)
-
-[응답 형식 - 반드시 이 형식으로!]
-{
-  "slips": [
-    {
-      "slipNumber": "J2025-0001",
-      "slipDate": "2025-01-15",
-      "entries": [
-        { "accountCode": "현금", "debit": 1000000, "credit": 0, "description": "매출대금 수령" },
-        { "accountCode": "매출", "debit": 0, "credit": 1000000, "description": "상품 판매" }
-      ]
-    },
-    {
-      "slipNumber": "J2025-0002",
-      "slipDate": "2025-01-16",
-      "entries": [
-        { "accountCode": "비품", "debit": 500000, "credit": 0, "description": "사무용품 구입" },
-        { "accountCode": "보통예금", "debit": 0, "credit": 500000, "description": "대금 지급" }
-      ]
-    }
-  ]
-}
-
-[중요]
-- 전표가 1개든 10개든 반드시 "slips" 배열 안에 넣어주세요
-- 각 전표의 차변 합계와 대변 합계가 일치해야 함 (복식부기 원칙)
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 
@@ -480,7 +432,6 @@ export const documentTypeDetectionPrompt = `이 문서의 유형을 판별해주
 - contract: 계약서 (용역계약서, 매매계약서, 임대차계약서, 공급계약서 등)
 - taxInvoice: 세금계산서
 - tradingStatement: 거래명세서
-- accountingSlip: 회계전표 (분개전표, 입금전표, 출금전표 등)
 - bankStatement: 통장 입출금내역
 - assetDisposal: 취득처분전표 (자산 취득/처분 관련)
 - withholdingTax: 급여원천징수이행상황신고서 또는 원천징수영수증 (급여 관련 원천징수 문서)

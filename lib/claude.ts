@@ -47,7 +47,7 @@ export async function detectDocumentType(base64Image: string, mediaType: string)
   } catch {
     // JSON 파싱 실패 시 텍스트에서 직접 추출
     const types: DocumentType[] = [
-      'contract', 'taxInvoice', 'tradingStatement', 'accountingSlip',
+      'contract', 'taxInvoice', 'tradingStatement',
       'bankStatement', 'assetDisposal', 'withholdingTax', 'estimate'
     ]
     for (const type of types) {
@@ -141,7 +141,7 @@ ${documentTypeDetectionPrompt}`,
     }
   } catch {
     const types: DocumentType[] = [
-      'contract', 'taxInvoice', 'tradingStatement', 'accountingSlip',
+      'contract', 'taxInvoice', 'tradingStatement',
       'bankStatement', 'assetDisposal', 'withholdingTax', 'estimate'
     ]
     for (const type of types) {
@@ -183,7 +183,6 @@ ${pdfText}
 
 [증빙 문서 유형]
 - taxInvoice: 전자세금계산서 (공급자, 공급받는자, 공급가액, 세액 등이 있음)
-- accountingSlip: 회계전표 (전표번호, 계정과목, 차변, 대변, 적요 등이 있음)
 - tradingStatement: 거래명세서 (품목, 수량, 단가, 금액 등이 있음)
 - contract: 계약서 (갑, 을, 계약내용, 계약금액 등이 있음)
 - bankStatement: 통장입출금내역, 이체확인증, 거래내역조회 (거래일, 입금, 출금, 잔액, 이체금액 등)
@@ -208,8 +207,8 @@ JSON 배열로 응답해주세요:
       "approximateLocation": "문서 상단 ~ 중간"
     },
     {
-      "documentType": "accountingSlip",
-      "description": "회계전표 - 전표번호 20241201-001",
+      "documentType": "tradingStatement",
+      "description": "거래명세서 - (주)ABC 3월분",
       "approximateLocation": "문서 중간 ~ 하단"
     }
   ]
@@ -244,7 +243,7 @@ JSON 배열로 응답해주세요:
       }))
 
       return sections.length > 0 ? sections : [{
-        documentType: 'accountingSlip',
+        documentType: 'contract',
         startIndex: 0,
         endIndex: pdfText.length,
         text: pdfText
@@ -255,7 +254,7 @@ JSON 배열로 응답해주세요:
   }
 
   // 파싱 실패 시 단일 문서로 처리
-  return [{ documentType: 'accountingSlip', startIndex: 0, endIndex: pdfText.length, text: pdfText }]
+  return [{ documentType: 'contract', startIndex: 0, endIndex: pdfText.length, text: pdfText }]
 }
 
 // 각 문서 유형별로 텍스트에서 정보 추출 (다중 문서 처리)
@@ -269,14 +268,7 @@ export async function extractMultipleDocumentsFromText(
     const template = documentTemplates[docType]
     if (!template) continue
 
-    // 회계전표는 여러 전표가 있을 수 있으므로 기존 extractWithTextTemplate 사용
-    // (slips 배열로 모든 전표를 한 번에 추출)
-    let fields: Record<string, any>
-    if (docType === 'accountingSlip') {
-      fields = await extractWithTextTemplate(pdfText, template)
-    } else {
-      fields = await extractWithTextTemplateForType(pdfText, template)
-    }
+    const fields: Record<string, any> = await extractWithTextTemplateForType(pdfText, template)
 
     if (fields && Object.keys(fields).some(k => fields[k] !== null)) {
       results.push({ documentType: docType, fields })
