@@ -36,6 +36,7 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
     { key: 'supplier', label: '공급자' },
     { key: 'receiver', label: '공급받는자' },
     { key: 'issueDate', label: '작성일' },
+    { key: 'items', label: '품목' },
     { key: 'supplyValue', label: '공급가액' },
     { key: 'taxAmount', label: '부가세' },
     { key: 'totalAmount', label: '합계금액' },
