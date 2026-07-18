@@ -68,8 +68,9 @@ const fieldLabels: Record<string, string> = {
   withholdingAgent: '징수의무자',
   businessNumber: '사업자등록번호',
   // 견적서
-  createdDate: '작성일',
+  createdDate: '견적일자',
   validityPeriod: '유효기간',
+  notes: '기타사항',
   // 급여대장
   paymentYearMonth: '귀속년월',
   paymentDate: '지급일',

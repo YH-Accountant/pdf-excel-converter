@@ -83,13 +83,15 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
   ],
   estimate: [
     { key: '_rowNumber', label: 'No.' },
-    { key: 'tradingPartner', label: '거래처' },
-    { key: 'createdDate', label: '작성일' },
+    { key: 'createdDate', label: '견적일자' },
+    { key: 'validityPeriod', label: '유효기간' },
+    { key: 'supplier', label: '공급자' },
+    { key: 'receiver', label: '공급받는자' },
     { key: 'items', label: '품목' },
     { key: 'quantity', label: '수량' },
     { key: 'unitPrice', label: '단가' },
     { key: 'totalAmount', label: '합계금액' },
-    { key: 'validityPeriod', label: '유효기간' },
+    { key: 'notes', label: '기타사항' },
   ],
   payroll: [
     { key: '_rowNumber', label: 'No.' },
@@ -216,6 +218,7 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
         if (h.key === 'items') return { wch: 24 }
         if (h.key === 'businessNumber') return { wch: 16 }
         if (h.key === 'withholdingAgent') return { wch: 22 }
+        if (h.key === 'notes') return { wch: 40 }
         return { wch: 15 }
       })
 
