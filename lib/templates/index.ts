@@ -117,16 +117,20 @@ export const documentTemplates: Record<DocumentType, {
 3. tradingDate (거래일)
    - YYYY-MM-DD 형식
 
-4. items (품목명)
-   - 주요 품목 나열 (여러 개인 경우 콤마로 구분)
+4. items (품목명) ★ 품목별 다행 정렬
+   - 품목이 여러 개면 한 줄에 하나씩, 줄바꿈(\n)으로 구분
+   - 예: "산업용 제어 PLC\n배전반 케이스\n설치 및 시운전"
 
-5. quantity (수량)
-   - 총 수량 (숫자만)
-   - 여러 품목인 경우 각각 표기: "품목A: 100, 품목B: 50"
+5. quantity (수량) ★ items와 같은 순서·같은 개수
+   - 품목별 수량을 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
+   - 숫자만
+   - 예: "12\n8\n1"
 
-6. unitPrice (단가)
-   - 숫자만 (콤마 없이)
-   - 여러 품목인 경우 각각 표기
+6. unitPrice (단가) ★ items와 같은 순서·같은 개수
+   - 품목별 단가를 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
+   - 각 줄은 숫자만 (콤마 없이)
+   - 예: "850000\n420000\n2800000"
+   - 반드시 items의 품목 수와 동일한 개수로 추출할 것 (품목이 3개면 단가도 3줄)
 
 7. totalAmount (합계 금액)
    - 형식: "한글금액(숫자, VAT 별도/포함)"
@@ -252,7 +256,9 @@ export const documentTemplates: Record<DocumentType, {
 
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
-    fields: ['companyDivision', 'attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
+    // 징수의무자(법인명)·사업자등록번호는 여러 사업장 자료를 대사할 때 신고서 귀속처를
+    // 식별하는 Key로 사용 (법정 필수 기재사항 중 검증에 기여하는 항목만 추가)
+    fields: ['withholdingAgent', 'businessNumber', 'companyDivision', 'attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
     prompt: `당신은 원천징수 문서 분석 전문가입니다. 아래 문서는 원천징수이행상황신고서 또는 원천징수영수증입니다. 핵심 정보를 정확하게 추출해주세요.
 
 [문서 유형]
@@ -260,7 +266,15 @@ export const documentTemplates: Record<DocumentType, {
 - 원천징수영수증: 사업자가 근로자에게 발급하는 영수증. 총급여액/소득세 명시됨
 
 [추출 규칙]
-0. companyDivision (사업장명/공장명)
+0-1. withholdingAgent (징수의무자 — 법인명/상호)
+   - 신고서를 제출하는 원천징수의무자의 법인명 또는 상호
+   - 예: "주식회사 대성이엔지"
+
+0-2. businessNumber (사업자등록번호)
+   - 원천징수의무자의 사업자등록번호 (없으면 주민등록번호)
+   - 하이픈 포함 형식으로 기재. 예: "214-81-45123"
+
+0-3. companyDivision (사업장명/공장명)
    - 문서에 기재된 사업장 구분명 (공장명, 지점명 등)
    - 전체 회사명이 아닌 사업장 구분명만 추출
    - 예: "제1공장", "제3공장", "본사", "서울지점"
@@ -325,16 +339,20 @@ export const documentTemplates: Record<DocumentType, {
 2. createdDate (작성일)
    - YYYY-MM-DD 형식
 
-3. items (품목명)
-   - 주요 품목 나열 (여러 개인 경우 콤마로 구분)
+3. items (품목명) ★ 품목별 다행 정렬
+   - 품목이 여러 개면 한 줄에 하나씩, 줄바꿈(\n)으로 구분
+   - 예: "산업용 제어 PLC\n배전반 케이스\n설치 및 시운전"
 
-4. quantity (수량)
+4. quantity (수량) ★ items와 같은 순서·같은 개수
+   - 품목별 수량을 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
    - 숫자만
-   - 여러 품목인 경우: "품목A: 10, 품목B: 5"
+   - 예: "12\n8\n1"
 
-5. unitPrice (단가)
-   - 숫자만 (콤마 없이)
-   - 여러 품목인 경우 각각 표기
+5. unitPrice (단가) ★ items와 같은 순서·같은 개수
+   - 품목별 단가를 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
+   - 각 줄은 숫자만 (콤마 없이)
+   - 예: "850000\n420000\n2800000"
+   - 반드시 items의 품목 수와 동일한 개수로 추출할 것 (품목이 3개면 단가도 3줄)
 
 6. totalAmount (합계 금액) ★ 핵심 필드 - 정확하게 추출!
    - 형식: "한글금액(숫자원, VAT 별도/포함)"

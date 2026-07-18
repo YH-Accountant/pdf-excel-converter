@@ -73,6 +73,8 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
   ],
   withholdingTax: [
     { key: '_rowNumber', label: 'No.' },
+    { key: 'withholdingAgent', label: '징수의무자' },
+    { key: 'businessNumber', label: '사업자등록번호' },
     { key: 'attributionYearMonth', label: '귀속년월' },
     { key: 'numberOfPeople', label: '인원' },
     { key: 'totalPayment', label: '총지급액' },
@@ -98,13 +100,17 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
   ],
 }
 
-// 숫자 금액 필드
+// 숫자 금액 필드 (단일 금액 → 천 단위 콤마)
+// unitPrice/quantity는 품목별 다행 값이므로 여기서 제외하고 별도 처리
 const numberFields = [
   'supplyValue', 'taxAmount', 'totalAmount',
   'deposit', 'withdrawal', 'balance',
-  'incomeTax', 'localIncomeTax', 'totalPayment', 'unitPrice', 'amount',
+  'incomeTax', 'localIncomeTax', 'totalPayment', 'amount',
   'acquisitionCost', 'disposalPrice'
 ]
+
+// 품목별 다행 필드 (한 줄에 하나씩, 순서 정렬 유지)
+const multiLineItemFields = ['items', 'quantity', 'unitPrice']
 
 // 숫자 포맷팅
 const formatNumber = (value: any): string => {
@@ -112,6 +118,22 @@ const formatNumber = (value: any): string => {
   const num = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) : value
   if (isNaN(num)) return String(value)
   return num.toLocaleString('ko-KR')
+}
+
+// 품목별 다행 필드 포맷팅: 줄바꿈 유지, 숫자 줄은 천 단위 콤마 적용
+// (구버전 콤마 구분 데이터도 줄바꿈으로 변환)
+const formatMultiLineField = (value: any): string => {
+  if (value === null || value === undefined || value === '') return ''
+  const raw = String(value)
+  const lines = raw.includes('\n') ? raw.split('\n') : raw.split(/,\s*/)
+  return lines
+    .map((line) => {
+      const t = line.trim()
+      if (t === '') return ''
+      const num = parseFloat(t.replace(/,/g, ''))
+      return !isNaN(num) && /^[\d,]+$/.test(t) ? num.toLocaleString('ko-KR') : t
+    })
+    .join('\n')
 }
 
 // 헤더 스타일
@@ -169,6 +191,9 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
             return idx + 1  // 1부터 시작하는 번호
           }
           const value = result.fields[h.key]
+          if (multiLineItemFields.includes(h.key)) {
+            return formatMultiLineField(value)
+          }
           if (numberFields.includes(h.key)) {
             return formatNumber(value)
           }
@@ -188,6 +213,9 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
         if (h.key === 'contractContent') return { wch: 50 }
         if (h.key === 'contractTerms') return { wch: 50 }
         if (h.key === 'description') return { wch: 40 }
+        if (h.key === 'items') return { wch: 24 }
+        if (h.key === 'businessNumber') return { wch: 16 }
+        if (h.key === 'withholdingAgent') return { wch: 22 }
         return { wch: 15 }
       })
 

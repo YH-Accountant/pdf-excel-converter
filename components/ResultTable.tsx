@@ -17,8 +17,11 @@ const documentTypeLabels: Record<DocumentType, string> = {
   payroll: '급여대장',
 }
 
-// 숫자 금액 필드 (콤마 포맷 적용)
-const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'unitPrice', 'amount', 'acquisitionCost', 'disposalPrice']
+// 숫자 금액 필드 (콤마 포맷 적용) — 품목별 다행 필드(unitPrice 등)는 제외
+const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'amount', 'acquisitionCost', 'disposalPrice']
+
+// 품목별 다행 필드 (한 줄에 하나씩)
+const multiLineItemFields = ['items', 'quantity', 'unitPrice']
 
 // 숫자를 천 단위 콤마 포맷으로 변환
 const formatNumber = (value: any): string => {
@@ -28,9 +31,24 @@ const formatNumber = (value: any): string => {
   return num.toLocaleString('ko-KR')
 }
 
+// 품목별 다행 필드: 줄바꿈 유지, 숫자 줄은 천 단위 콤마
+const formatMultiLineField = (value: any): string => {
+  const raw = String(value)
+  const lines = raw.includes('\n') ? raw.split('\n') : raw.split(/,\s*/)
+  return lines
+    .map((line) => {
+      const t = line.trim()
+      if (t === '') return ''
+      const num = parseFloat(t.replace(/,/g, ''))
+      return !isNaN(num) && /^[\d,]+$/.test(t) ? num.toLocaleString('ko-KR') : t
+    })
+    .join('\n')
+}
+
 // 필드 값 포맷팅
 const formatValue = (key: string, value: any): string => {
   if (value === null || value === undefined) return '-'
+  if (multiLineItemFields.includes(key)) return formatMultiLineField(value)
   if (numberFields.includes(key)) return formatNumber(value)
   return String(value)
 }
@@ -81,6 +99,8 @@ const fieldLabels: Record<string, string> = {
   totalPayment: '총지급액',
   incomeTax: '소득세',
   localIncomeTax: '지방소득세',
+  withholdingAgent: '징수의무자',
+  businessNumber: '사업자등록번호',
   // 견적서
   createdDate: '작성일',
   validityPeriod: '유효기간',
@@ -115,7 +135,7 @@ export default function ResultTable({ data }: ResultTableProps) {
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                     {fieldLabels[key] || key}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
+                  <td className="px-4 py-3 text-sm text-gray-600 whitespace-pre-line">
                     {formatValue(key, value)}
                   </td>
                 </tr>
