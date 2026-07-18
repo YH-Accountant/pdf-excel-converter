@@ -341,33 +341,42 @@ export const documentTemplates: Record<DocumentType, {
 
   estimate: {
     label: '견적서',
-    fields: ['tradingPartner', 'createdDate', 'items', 'quantity', 'unitPrice', 'totalAmount', 'validityPeriod'],
+    fields: ['createdDate', 'validityPeriod', 'supplier', 'receiver', 'items', 'quantity', 'unitPrice', 'totalAmount', 'notes'],
     prompt: `당신은 견적서 분석 전문가입니다. 아래 견적서에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
-1. tradingPartner (거래처명)
-   - 견적을 받는 회사 또는 고객명
-
-2. createdDate (작성일)
+1. createdDate (견적일자/발행일자)
    - YYYY-MM-DD 형식
+   - 견적일, 발행일, 작성일 등에서 추출
 
-3. items (품목명) ★ 품목별 다행 정렬
+2. validityPeriod (유효기간)
+   - 예: "견적일로부터 30일", "2025-02-28까지"
+
+3. supplier (공급자)
+   - 견적을 제출하는 쪽(을). 상호 기재, 사업자등록번호가 있으면 함께 표기
+   - 예: "(주)대성이엔지 (214-81-45123)"
+
+4. receiver (공급받는자)
+   - 견적을 받는 쪽(갑, 고객사)의 상호
+
+5. items (품목명) ★ 품목별 다행 정렬
    - 품목이 여러 개면 한 줄에 하나씩, 줄바꿈(\n)으로 구분
    - 예: "산업용 제어 PLC\n배전반 케이스\n설치 및 시운전"
 
-4. quantity (수량) ★ items와 같은 순서·같은 개수
+6. quantity (수량) ★ items와 같은 순서·같은 개수
    - 품목별 수량을 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
    - 숫자만
    - 예: "12\n8\n1"
 
-5. unitPrice (단가) ★ items와 같은 순서·같은 개수
+7. unitPrice (단가) ★ 개별단가가 기재된 경우에만, items와 같은 순서·같은 개수
    - 품목별 단가를 items와 동일한 순서로 한 줄에 하나씩, 줄바꿈(\n)으로 구분
    - 각 줄은 숫자만 (콤마 없이)
    - 예: "850000\n420000\n2800000"
-   - 반드시 items의 품목 수와 동일한 개수로 추출할 것 (품목이 3개면 단가도 3줄)
+   - 개별단가가 없고 합계만 있으면 null
+   - 개별단가가 있으면 반드시 items의 품목 수와 동일한 개수로 추출
 
-6. totalAmount (합계 금액) ★ 핵심 필드 - 정확하게 추출!
-   - 형식: "한글금액(숫자원, VAT 별도/포함)"
+8. totalAmount (합계 금액) ★ 핵심 필드 - 정확하게 추출!
+   - 형식: "한글금액(숫자원, VAT 포함/별도)"
    - 반드시 문서에 기재된 합계금액을 정확히 읽을 것
    - 한글 금액이 있으면 한글을 숫자로 정확히 변환:
      * 이천육백사십만원 = 26,400,000원
@@ -376,8 +385,10 @@ export const documentTemplates: Record<DocumentType, {
    - 예: "이천육백사십만원(26,400,000원, VAT 포함)"
    - 주의: 한글 금액과 숫자 금액이 일치해야 함!
 
-7. validityPeriod (견적 유효기간)
-   - 예: "견적일로부터 30일", "2025-02-28까지"
+9. notes (기타사항) — 있으면 추출, 없으면 null
+   - 결제조건, 납기기한, 유지보수 조건 등 견적서 하단의 부가 조건
+   - 여러 항목이면 한 줄에 하나씩 줄바꿈(\n)으로 구분
+   - 예: "결제조건: 계좌이체\n납기: 발주 후 30일\n유지보수: 무상 1년"
 
 [중요]
 - 금액 추출 시 한글 금액을 정확히 숫자로 변환할 것!
