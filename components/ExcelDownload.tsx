@@ -1,73 +1,12 @@
 'use client'
 
-import { ExtractedData, DocumentType } from '@/app/single/page'
+import { ExtractedData } from '@/app/single/page'
+import { DOCUMENT_FIELDS, DOCUMENT_TYPE_LABELS, formatFieldValue } from '@/lib/documentFields'
 import XLSX from 'xlsx-js-style'
 
 interface ExcelDownloadProps {
   data: ExtractedData
   fileName?: string
-}
-
-const documentTypeLabels: Record<DocumentType, string> = {
-  contract: '계약서',
-  taxInvoice: '세금계산서',
-  tradingStatement: '거래명세서',
-  bankStatement: '통장입출금내역',
-  withholdingTax: '원천징수신고서',
-  estimate: '견적서',
-  payroll: '급여대장',
-}
-
-const fieldLabels: Record<string, string> = {
-  // 계약서
-  contractTitle: '계약서 제목',
-  partyA: '계약당사자(갑)',
-  partyB: '계약당사자(을)',
-  contractDate: '계약일',
-  contractContent: '계약내용',
-  contractAmount: '계약금액',
-  contractTerms: '계약조건',
-  contractPeriod: '계약기간',
-  // 세금계산서
-  supplier: '공급자',
-  receiver: '공급받는자',
-  issueDate: '작성일',
-  items: '품목',
-  supplyValue: '공급가액',
-  taxAmount: '부가세',
-  totalAmount: '총액/합계',
-  // 거래명세서
-  tradingPartner: '거래처',
-  tradingDate: '거래일',
-  quantity: '수량',
-  unitPrice: '단가',
-  // 공통
-  description: '적요',
-  // 통장 입출금내역
-  transactionDate: '거래일',
-  deposit: '입금',
-  withdrawal: '출금',
-  sender: '보내는분',
-  recipient: '받는분',
-  transactionContent: '거래내용',
-  // 원천징수신고서
-  attributionYearMonth: '귀속년월',
-  numberOfPeople: '인원',
-  totalPayment: '총지급액',
-  incomeTax: '소득세',
-  localIncomeTax: '지방소득세',
-  withholdingAgent: '징수의무자',
-  businessNumber: '사업자등록번호',
-  // 견적서
-  createdDate: '견적일자',
-  validityPeriod: '유효기간',
-  notes: '기타사항',
-  // 급여대장
-  paymentYearMonth: '귀속년월',
-  paymentDate: '지급일',
-  companyName: '회사명',
-  employees: '직원목록',
-  totalNetPay: '실지급액합계',
 }
 
 // 헤더 스타일 (옅은 회색 배경)
@@ -94,108 +33,24 @@ const cellStyle = {
   alignment: { vertical: 'center', wrapText: true },
 }
 
-// 강조 볼드 스타일
-const boldCellStyle = {
-  border: {
-    top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-    bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-    left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-    right: { style: 'thin', color: { rgb: 'CCCCCC' } },
-  },
-  alignment: { vertical: 'center', wrapText: true },
-  font: { bold: true },
-}
-
-// 숫자를 천 단위 콤마 포맷으로 변환
-const formatNumber = (value: any): string => {
-  if (value === null || value === undefined || value === '') return ''
-  const num = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) : value
-  if (isNaN(num)) return String(value)
-  return num.toLocaleString('ko-KR')
-}
-
-// 계약조건 등 배열 데이터를 줄바꿈으로 분리
-const formatArrayValue = (value: any): string => {
-  if (Array.isArray(value)) {
-    return value.join('\n')
-  }
-  return value !== null && value !== undefined ? String(value) : ''
-}
-
-// 계약내용 등 긴 텍스트를 문장 단위로 줄바꿈
-const formatLongText = (value: string): string => {
-  // 마침표 뒤에 줄바꿈 추가 (단, 숫자.숫자 형태는 제외)
-  return value.replace(/\. (?![0-9])/g, '.\n')
-}
-
-// 품목별 다행 필드 (한 줄에 하나씩, 숫자 줄은 천 단위 콤마)
-const multiLineItemFields = ['items', 'quantity', 'unitPrice']
-const formatMultiLineField = (value: any): string => {
-  if (value === null || value === undefined || value === '') return ''
-  const raw = String(value)
-  const lines = raw.includes('\n') ? raw.split('\n') : raw.split(/,\s*/)
-  return lines
-    .map((line) => {
-      const t = line.trim()
-      if (t === '') return ''
-      const num = parseFloat(t.replace(/,/g, ''))
-      return !isNaN(num) && /^[\d,]+$/.test(t) ? num.toLocaleString('ko-KR') : t
-    })
-    .join('\n')
-}
-
 export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new()
 
+    // 유형별 표시 필드만, 화면(ResultTable)과 동일한 라벨·포맷으로 구성
+    const fields = DOCUMENT_FIELDS[data.documentType] ?? []
     const rows: any[][] = [['항목', '값']]
+    const rowHeights: { hpt: number }[] = [{ hpt: 25 }]
 
-    const longTextFields = ['contractContent', 'description', 'transactionContent']
-    const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment']
-    const boldFields: string[] = []
-    const boldRowIndices: number[] = []
-
-    Object.entries(data.fields).forEach(([key, value], index) => {
-      const label = fieldLabels[key] || key
-      let formattedValue = formatArrayValue(value)
-
-      if (multiLineItemFields.includes(key)) {
-        formattedValue = formatMultiLineField(value)
-      } else if (numberFields.includes(key)) {
-        formattedValue = formatNumber(value)
-      }
-
-      if (longTextFields.includes(key) && typeof formattedValue === 'string') {
-        formattedValue = formatLongText(formattedValue)
-      }
-
-      if (boldFields.includes(key) && value) {
-        boldRowIndices.push(rows.length)
-      }
-
-      rows.push([label, formattedValue])
+    fields.forEach(({ key, label }) => {
+      const formatted = formatFieldValue(key, data.fields[key])
+      rows.push([label, formatted])
+      const lineCount = (formatted.match(/\n/g) || []).length + 1
+      rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
     })
 
     const ws = XLSX.utils.aoa_to_sheet(rows)
     ws['!cols'] = [{ wch: 20 }, { wch: 80 }]
-
-    const rowHeights: { hpt: number }[] = [{ hpt: 25 }]
-    Object.entries(data.fields).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        rowHeights.push({ hpt: Math.max(25, value.length * 20) })
-      } else if (multiLineItemFields.includes(key)) {
-        const lineCount = (formatMultiLineField(value).match(/\n/g) || []).length + 1
-        rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
-      } else if (longTextFields.includes(key) && typeof value === 'string') {
-        const sentenceCount = (value.match(/\. /g) || []).length + 1
-        rowHeights.push({ hpt: Math.max(25, sentenceCount * 20) })
-      } else if (typeof value === 'string' && value.includes('\n')) {
-        const lineCount = (value.match(/\n/g) || []).length + 1
-        rowHeights.push({ hpt: Math.max(25, lineCount * 20) })
-      } else {
-        rowHeights.push({ hpt: 25 })
-      }
-    })
     ws['!rows'] = rowHeights
 
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
@@ -203,26 +58,15 @@ export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
       for (let C = range.s.c; C <= range.e.c; C++) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
         if (!ws[cellAddress]) continue
-
-        if (R === 0) {
-          ws[cellAddress].s = headerStyle
-        } else if (boldRowIndices.includes(R)) {
-          ws[cellAddress].s = boldCellStyle
-        } else {
-          ws[cellAddress].s = cellStyle
-        }
+        ws[cellAddress].s = R === 0 ? headerStyle : cellStyle
       }
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, documentTypeLabels[data.documentType])
+    const typeLabel = DOCUMENT_TYPE_LABELS[data.documentType]
+    XLSX.utils.book_append_sheet(wb, ws, typeLabel)
 
-
-    // 파일 이름 생성
     const baseFileName = fileName?.replace(/\.[^/.]+$/, '') || '추출결과'
-    const outputFileName = `${baseFileName}_${documentTypeLabels[data.documentType]}.xlsx`
-
-    // 다운로드
-    XLSX.writeFile(wb, outputFileName)
+    XLSX.writeFile(wb, `${baseFileName}_${typeLabel}.xlsx`)
   }
 
   return (
