@@ -76,7 +76,7 @@ export default function PreviewPage() {
     },
   ]
 
-  const docTypes = ['계약서', '세금계산서', '거래명세서', '회계전표', '통장 입출금내역', '원천징수신고서', '견적서', '급여대장']
+  const docTypes = ['계약서', '세금계산서', '거래명세서', '통장 입출금내역', '원천징수신고서', '견적서', '급여대장']
 
   return (
     <div className={`min-h-screen ${t.bg} transition-all duration-500`}>

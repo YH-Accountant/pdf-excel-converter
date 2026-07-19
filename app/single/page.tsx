@@ -12,7 +12,7 @@ export type DocumentType =
   | 'taxInvoice'         // 세금계산서
   | 'tradingStatement'   // 거래명세서
   | 'bankStatement'      // 통장 입출금내역
-  | 'withholdingTax'     // 급여원천징수이행상황신고서
+  | 'withholdingTax'     // 원천징수신고서
   | 'estimate'           // 견적서
   | 'payroll'            // 급여대장
 

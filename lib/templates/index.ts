@@ -224,7 +224,7 @@ export const documentTemplates: Record<DocumentType, {
   },
 
   withholdingTax: {
-    label: '급여원천징수이행상황신고서',
+    label: '원천징수신고서',
     // 징수의무자(법인명)·사업자등록번호는 여러 사업장 자료를 대사할 때 신고서 귀속처를
     // 식별하는 Key로 사용 (법정 필수 기재사항 중 검증에 기여하는 항목만 추가)
     fields: ['withholdingAgent', 'businessNumber', 'companyDivision', 'attributionYearMonth', 'paymentYearMonth', 'numberOfPeople', 'totalPayment', 'incomeTax', 'localIncomeTax'],
