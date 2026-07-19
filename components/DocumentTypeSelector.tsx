@@ -12,7 +12,6 @@ const documentTypes: { value: DocumentType; label: string }[] = [
   { value: 'taxInvoice', label: '세금계산서' },
   { value: 'tradingStatement', label: '거래명세서' },
   { value: 'bankStatement', label: '통장 입출금내역' },
-  { value: 'assetDisposal', label: '취득처분전표' },
   { value: 'withholdingTax', label: '급여원천징수이행상황신고서' },
   { value: 'estimate', label: '견적서' },
 ]

@@ -12,7 +12,6 @@ const documentTypeLabels: Record<DocumentType, string> = {
   taxInvoice: '세금계산서',
   tradingStatement: '거래명세서',
   bankStatement: '통장입출금내역',
-  assetDisposal: '취득처분전표',
   withholdingTax: '원천징수신고서',
   estimate: '견적서',
   payroll: '급여대장',
@@ -60,18 +59,6 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
     { key: 'recipient', label: '받는분' },
     { key: 'transactionContent', label: '거래내용' },
   ],
-  assetDisposal: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'transactionType', label: '거래유형' },
-    { key: 'transactionDate', label: '거래일자' },
-    { key: 'assetCategory', label: '자산분류' },
-    { key: 'itemDetail', label: '품목상세' },
-    { key: 'counterparty', label: '거래처' },
-    { key: 'acquisitionCost', label: '취득원가' },
-    { key: 'disposalPrice', label: '처분가액' },
-    { key: 'accountCode', label: '계정과목' },
-    { key: 'slipNumber', label: '전표번호' },
-  ],
   withholdingTax: [
     { key: '_rowNumber', label: 'No.' },
     { key: 'withholdingAgent', label: '징수의무자' },
@@ -108,8 +95,7 @@ const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = 
 const numberFields = [
   'supplyValue', 'taxAmount', 'totalAmount',
   'deposit', 'withdrawal', 'balance',
-  'incomeTax', 'localIncomeTax', 'totalPayment', 'amount',
-  'acquisitionCost', 'disposalPrice'
+  'incomeTax', 'localIncomeTax', 'totalPayment', 'amount'
 ]
 
 // 품목별 다행 필드 (한 줄에 하나씩, 순서 정렬 유지)

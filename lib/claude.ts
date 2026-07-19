@@ -48,7 +48,7 @@ export async function detectDocumentType(base64Image: string, mediaType: string)
     // JSON 파싱 실패 시 텍스트에서 직접 추출
     const types: DocumentType[] = [
       'contract', 'taxInvoice', 'tradingStatement',
-      'bankStatement', 'assetDisposal', 'withholdingTax', 'estimate'
+      'bankStatement', 'withholdingTax', 'estimate'
     ]
     for (const type of types) {
       if (textContent.text.includes(type)) {
@@ -142,7 +142,7 @@ ${documentTypeDetectionPrompt}`,
   } catch {
     const types: DocumentType[] = [
       'contract', 'taxInvoice', 'tradingStatement',
-      'bankStatement', 'assetDisposal', 'withholdingTax', 'estimate'
+      'bankStatement', 'withholdingTax', 'estimate'
     ]
     for (const type of types) {
       if (textContent.text.includes(type)) {

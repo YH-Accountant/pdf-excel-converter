@@ -13,7 +13,6 @@ const documentTypeLabels: Record<DocumentType, string> = {
   taxInvoice: '세금계산서',
   tradingStatement: '거래명세서',
   bankStatement: '통장입출금내역',
-  assetDisposal: '취득처분전표',
   withholdingTax: '원천징수신고서',
   estimate: '견적서',
   payroll: '급여대장',
@@ -42,9 +41,7 @@ const fieldLabels: Record<string, string> = {
   tradingDate: '거래일',
   quantity: '수량',
   unitPrice: '단가',
-  // 공통 (취득처분전표 등에서 사용)
-  slipNumber: '전표번호',
-  accountCode: '계정과목',
+  // 공통
   description: '적요',
   // 통장 입출금내역
   transactionDate: '거래일',
@@ -53,12 +50,6 @@ const fieldLabels: Record<string, string> = {
   sender: '보내는분',
   recipient: '받는분',
   transactionContent: '거래내용',
-  // 자산취득처분 (transactionDate, accountCode, slipNumber는 위에서 정의됨)
-  transactionType: '거래유형',
-  assetCategory: '자산분류',
-  itemDetail: '품목상세',
-  acquisitionCost: '취득원가',
-  disposalPrice: '처분가액',
   // 원천징수신고서
   attributionYearMonth: '귀속년월',
   numberOfPeople: '인원',
@@ -160,7 +151,7 @@ export default function ExcelDownload({ data, fileName }: ExcelDownloadProps) {
     const rows: any[][] = [['항목', '값']]
 
     const longTextFields = ['contractContent', 'description', 'transactionContent']
-    const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'acquisitionCost', 'disposalPrice']
+    const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment']
     const boldFields: string[] = []
     const boldRowIndices: number[] = []
 

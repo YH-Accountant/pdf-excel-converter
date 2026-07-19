@@ -223,59 +223,6 @@ export const documentTemplates: Record<DocumentType, {
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`,
   },
 
-  assetDisposal: {
-    label: '자산취득처분',
-    fields: ['transactionType', 'transactionDate', 'assetCategory', 'itemDetail', 'counterparty', 'acquisitionCost', 'disposalPrice', 'accountCode', 'slipNumber'],
-    prompt: `당신은 회계감사 전문가입니다. 아래 전표/증빙에서 자산 취득 또는 처분 관련 정보를 추출해주세요.
-이 정보는 감사 조서(Audit Working Paper)에 사용되며, GL(총계정원장)과 대사(Reconciliation)하는 데 활용됩니다.
-
-[추출 규칙]
-1. transactionType (거래유형)
-   - "취득" 또는 "처분" 중 하나
-   - 자산 계정이 차변에 있으면 "취득", 대변에 있으면 "처분"
-
-2. transactionDate (거래일자)
-   - YYYY-MM-DD 형식
-   - GL 대사를 위한 Key 값
-
-3. assetCategory (자산분류)
-   - 계정과목 기준 분류
-   - 예: "건물", "기계장치", "차량운반구", "비품", "소프트웨어" 등
-
-4. itemDetail (품목상세) ★ 핵심 필드
-   - 가능한 한 구체적인 모델명/품명 추출
-   - 단순 "비품"이 아니라 "안마의자 바디프렌드 팬텀2", "맥북 프로 16인치 M3" 등
-   - 업무 무관 자산 여부 판단에 사용됨
-   - 적요, 품목명, 모델명 등에서 상세 정보 추출
-
-5. counterparty (거래처)
-   - 자산을 구입/판매한 상대방 회사명
-   - GL 대사를 위한 Key 값
-
-6. acquisitionCost (취득원가)
-   - 숫자만 (콤마 없이)
-   - 취득 시: 실제 취득금액 (공급가액 기준)
-   - 처분 시: 해당 자산의 원래 취득원가 (알 수 있는 경우)
-
-7. disposalPrice (처분가액)
-   - 숫자만 (콤마 없이)
-   - 처분 시에만 해당, 처분 대가로 받은 금액
-   - 취득 건이면 null
-
-8. accountCode (계정과목)
-   - 전표상의 계정과목명
-   - 예: "비품", "차량운반구", "유형자산처분손실" 등
-
-9. slipNumber (전표번호)
-   - 문서에 기재된 전표번호
-   - GL 대사를 위한 Key 값
-
-[중요]
-- 이 데이터는 감사인이 '자산의 실재성 및 분류 적정성'을 판단하는 데 사용됩니다
-- itemDetail(품목상세)을 최대한 구체적으로 추출해주세요 (업무 무관 자산 판단용)
-- 문서에서 명확히 확인되지 않는 정보는 null로 표시`
-  },
-
   withholdingTax: {
     label: '급여원천징수이행상황신고서',
     // 징수의무자(법인명)·사업자등록번호는 여러 사업장 자료를 대사할 때 신고서 귀속처를
@@ -485,7 +432,6 @@ export const documentTypeDetectionPrompt = `이 문서의 유형을 판별해주
 - taxInvoice: 세금계산서
 - tradingStatement: 거래명세서
 - bankStatement: 통장 입출금내역
-- assetDisposal: 취득처분전표 (자산 취득/처분 관련)
 - withholdingTax: 급여원천징수이행상황신고서 또는 원천징수영수증 (급여 관련 원천징수 문서)
 - estimate: 견적서
 - payroll: 급여대장 (급여명세서, 급여지급내역, 급여대장 등)

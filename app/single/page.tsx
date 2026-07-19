@@ -12,7 +12,6 @@ export type DocumentType =
   | 'taxInvoice'         // 세금계산서
   | 'tradingStatement'   // 거래명세서
   | 'bankStatement'      // 통장 입출금내역
-  | 'assetDisposal'      // 취득처분전표
   | 'withholdingTax'     // 급여원천징수이행상황신고서
   | 'estimate'           // 견적서
   | 'payroll'            // 급여대장
@@ -24,7 +23,7 @@ export interface ExtractedData {
   sourceFileName?: string  // 원본 파일명 (색인형 엑셀에서 원본과 1:1 매칭용)
 }
 
-const docTypes = ['계약서', '세금계산서', '거래명세서', '통장 입출금내역', '취득처분전표', '원천징수신고서', '견적서']
+const docTypes = ['계약서', '세금계산서', '거래명세서', '통장 입출금내역', '원천징수신고서', '견적서']
 
 export default function SinglePage() {
   const [files, setFiles] = useState<File[]>([])

@@ -11,14 +11,13 @@ const documentTypeLabels: Record<DocumentType, string> = {
   taxInvoice: '세금계산서',
   tradingStatement: '거래명세서',
   bankStatement: '통장 입출금내역',
-  assetDisposal: '취득처분전표',
   withholdingTax: '급여원천징수이행상황신고서',
   estimate: '견적서',
   payroll: '급여대장',
 }
 
 // 숫자 금액 필드 (콤마 포맷 적용) — 품목별 다행 필드(unitPrice 등)는 제외
-const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'amount', 'acquisitionCost', 'disposalPrice']
+const numberFields = ['supplyValue', 'taxAmount', 'totalAmount', 'deposit', 'withdrawal', 'balance', 'incomeTax', 'localIncomeTax', 'totalPayment', 'amount']
 
 // 품목별 다행 필드 (한 줄에 하나씩)
 const multiLineItemFields = ['items', 'quantity', 'unitPrice']
@@ -76,9 +75,7 @@ const fieldLabels: Record<string, string> = {
   quantity: '수량',
   unitPrice: '단가',
   totalAmount: '합계',
-  // 공통 (취득처분전표 등에서 사용)
-  slipNumber: '전표번호',
-  accountCode: '계정과목',
+  // 공통
   description: '적요',
   // 통장 입출금내역
   transactionDate: '거래일',
@@ -87,12 +84,6 @@ const fieldLabels: Record<string, string> = {
   sender: '보내는분',
   recipient: '받는분',
   transactionContent: '거래내용',
-  // 자산취득처분 (transactionDate, accountCode, slipNumber는 위에서 정의됨)
-  transactionType: '거래유형',
-  assetCategory: '자산분류',
-  itemDetail: '품목상세',
-  acquisitionCost: '취득원가',
-  disposalPrice: '처분가액',
   // 원천징수신고서
   attributionYearMonth: '귀속년월',
   numberOfPeople: '인원',
