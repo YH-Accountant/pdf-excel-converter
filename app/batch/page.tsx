@@ -6,6 +6,7 @@ import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
 import { checkImageQuality } from '@/lib/imageQuality'
+import { hasEnoughText } from '@/lib/textGate'
 import { computePdfRenderScale } from '@/lib/pdfRender'
 
 interface ProcessingFile {
@@ -207,7 +208,7 @@ export default function BatchPage() {
 
       console.log('추출된 텍스트 길이:', contentLength)
 
-      if (contentLength >= 50) {
+      if (hasEnoughText(contentOnly)) {
         // 텍스트 기반 추출
         console.log('✓ 텍스트 추출 성공!')
         formData.append('pdfText', text)
@@ -222,7 +223,7 @@ export default function BatchPage() {
         const ocrText = await callGoogleOcr(images)
         console.log('Google OCR 결과 길이:', ocrText.length)
 
-        if (ocrText && ocrText.length > 50) {
+        if (hasEnoughText(ocrText)) {
           // OCR 텍스트로 추출
           formData.append('pdfText', ocrText)
           formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
@@ -254,7 +255,7 @@ export default function BatchPage() {
       const ocrText = await callGoogleOcr([imageData])
       console.log('Google OCR 결과 길이:', ocrText.length)
 
-      if (ocrText && ocrText.length > 50) {
+      if (hasEnoughText(ocrText)) {
         // OCR 텍스트로 추출
         formData.append('pdfText', ocrText)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))

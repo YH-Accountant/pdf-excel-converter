@@ -6,6 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import XLSX from 'xlsx-js-style'
 import { matchEmployeesToTransactions, type EmployeeMatchResult } from '@/lib/payrollMatching'
 import { computePdfRenderScale } from '@/lib/pdfRender'
+import { hasEnoughText } from '@/lib/textGate'
 
 interface PayrollEmployee {
   name: string
@@ -300,16 +301,15 @@ export default function PayrollPage() {
     if (fileItem.file.type === 'application/pdf') {
       const text = await extractTextFromPdf(fileItem.file)
       const contentOnly = text.replace(/\[페이지 \d+\]\s*/g, '').trim()
-      const contentLength = contentOnly.length
 
-      if (!forceOcr && contentLength >= 50) {
+      if (!forceOcr && hasEnoughText(contentOnly)) {
         formData.append('pdfText', text)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')
       } else {
         const images = await convertPdfToBase64Images(fileItem.file)
         const ocrText = await callGoogleOcr(images)
-        if (ocrText && ocrText.length > 50) {
+        if (hasEnoughText(ocrText)) {
           formData.append('pdfText', ocrText)
           formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
           formData.append('fileCount', '1')
@@ -333,7 +333,7 @@ export default function PayrollPage() {
     } else if (fileItem.file.type.startsWith('image/')) {
       const imageData = await convertImageToBase64(fileItem.file)
       const ocrText = await callGoogleOcr([imageData])
-      if (ocrText && ocrText.length > 50) {
+      if (hasEnoughText(ocrText)) {
         formData.append('pdfText', ocrText)
         formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
         formData.append('fileCount', '1')

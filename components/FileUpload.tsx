@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { checkImageQuality } from '@/lib/imageQuality'
+import { hasEnoughText } from '@/lib/textGate'
 import { computePdfRenderScale } from '@/lib/pdfRender'
 
 interface FileUploadProps {
@@ -116,7 +117,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
 
           console.log('추출된 텍스트 길이:', contentLength)
 
-          if (contentLength >= 50) {
+          if (hasEnoughText(contentOnly)) {
             console.log('✓ 텍스트 추출 성공!')
             combinedText += `[파일: ${file.name}]\n${text}\n\n`
             newFiles.push(new File([file], file.name, { type: 'text/plain' }))
@@ -130,7 +131,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
             const ocrText = await callGoogleOcr(images)
             console.log('Google OCR 결과 길이:', ocrText.length)
 
-            if (ocrText && ocrText.length > 50) {
+            if (hasEnoughText(ocrText)) {
               combinedText += `[파일: ${file.name} (OCR)]\n${ocrText}\n\n`
               newFiles.push(new File([file], file.name, { type: 'text/plain' }))
             } else {
@@ -185,7 +186,7 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
           const ocrText = await callGoogleOcr([imageData])
           console.log('Google OCR 결과 길이:', ocrText.length)
 
-          if (ocrText && ocrText.length > 50) {
+          if (hasEnoughText(ocrText)) {
             // OCR 텍스트로 추출
             combinedText += `[파일: ${file.name} (OCR)]\n${ocrText}\n\n`
             newFiles.push(new File([file], file.name, { type: 'text/plain' }))
