@@ -1,142 +1,24 @@
 'use client'
 
 import { ExtractedData, DocumentType } from '@/app/single/page'
+import { DOCUMENT_FIELDS, DOCUMENT_TYPE_LABELS, formatFieldValue } from '@/lib/documentFields'
 import XLSX from 'xlsx-js-style'
 
 interface BatchExcelDownloadProps {
   results: ExtractedData[]
 }
 
-const documentTypeLabels: Record<DocumentType, string> = {
-  contract: '계약서',
-  taxInvoice: '세금계산서',
-  tradingStatement: '거래명세서',
-  bankStatement: '통장입출금내역',
-  assetDisposal: '취득처분전표',
-  withholdingTax: '원천징수신고서',
-  estimate: '견적서',
-  payroll: '급여대장',
-}
-
-// 문서 유형별 헤더 정의
-const documentHeaders: Record<DocumentType, { key: string; label: string }[]> = {
-  contract: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'contractTitle', label: '계약서 제목' },
-    { key: 'partyA', label: '계약당사자(갑)' },
-    { key: 'partyB', label: '계약당사자(을)' },
-    { key: 'contractDate', label: '계약일' },
-    { key: 'contractContent', label: '계약내용' },
-    { key: 'contractAmount', label: '계약금액' },
-    { key: 'contractTerms', label: '계약조건' },
-    { key: 'contractPeriod', label: '계약기간' },
-  ],
-  taxInvoice: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'supplier', label: '공급자' },
-    { key: 'receiver', label: '공급받는자' },
-    { key: 'issueDate', label: '작성일' },
-    { key: 'items', label: '품목' },
-    { key: 'supplyValue', label: '공급가액' },
-    { key: 'taxAmount', label: '부가세' },
-    { key: 'totalAmount', label: '합계금액' },
-  ],
-  tradingStatement: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'supplier', label: '공급자' },
-    { key: 'tradingPartner', label: '거래처' },
-    { key: 'tradingDate', label: '거래일' },
-    { key: 'items', label: '품목' },
-    { key: 'quantity', label: '수량' },
-    { key: 'unitPrice', label: '단가' },
-    { key: 'totalAmount', label: '합계금액' },
-  ],
-  bankStatement: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'transactionDate', label: '거래일' },
-    { key: 'deposit', label: '입금' },
-    { key: 'withdrawal', label: '출금' },
-    { key: 'sender', label: '보내는분' },
-    { key: 'recipient', label: '받는분' },
-    { key: 'transactionContent', label: '거래내용' },
-  ],
-  assetDisposal: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'transactionType', label: '거래유형' },
-    { key: 'transactionDate', label: '거래일자' },
-    { key: 'assetCategory', label: '자산분류' },
-    { key: 'itemDetail', label: '품목상세' },
-    { key: 'counterparty', label: '거래처' },
-    { key: 'acquisitionCost', label: '취득원가' },
-    { key: 'disposalPrice', label: '처분가액' },
-    { key: 'accountCode', label: '계정과목' },
-    { key: 'slipNumber', label: '전표번호' },
-  ],
-  withholdingTax: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'withholdingAgent', label: '징수의무자' },
-    { key: 'businessNumber', label: '사업자등록번호' },
-    { key: 'attributionYearMonth', label: '귀속년월' },
-    { key: 'numberOfPeople', label: '인원' },
-    { key: 'totalPayment', label: '총지급액' },
-    { key: 'incomeTax', label: '소득세' },
-    { key: 'localIncomeTax', label: '지방소득세' },
-  ],
-  estimate: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'createdDate', label: '견적일자' },
-    { key: 'validityPeriod', label: '유효기간' },
-    { key: 'supplier', label: '공급자' },
-    { key: 'receiver', label: '공급받는자' },
-    { key: 'items', label: '품목' },
-    { key: 'quantity', label: '수량' },
-    { key: 'unitPrice', label: '단가' },
-    { key: 'totalAmount', label: '합계금액' },
-    { key: 'notes', label: '기타사항' },
-  ],
-  payroll: [
-    { key: '_rowNumber', label: 'No.' },
-    { key: 'paymentYearMonth', label: '귀속년월' },
-    { key: 'paymentDate', label: '지급일' },
-    { key: 'companyName', label: '회사명' },
-    { key: 'totalNetPay', label: '실지급액합계' },
-  ],
-}
-
-// 숫자 금액 필드 (단일 금액 → 천 단위 콤마)
-// unitPrice/quantity는 품목별 다행 값이므로 여기서 제외하고 별도 처리
-const numberFields = [
-  'supplyValue', 'taxAmount', 'totalAmount',
-  'deposit', 'withdrawal', 'balance',
-  'incomeTax', 'localIncomeTax', 'totalPayment', 'amount',
-  'acquisitionCost', 'disposalPrice'
-]
-
-// 품목별 다행 필드 (한 줄에 하나씩, 순서 정렬 유지)
-const multiLineItemFields = ['items', 'quantity', 'unitPrice']
-
-// 숫자 포맷팅
-const formatNumber = (value: any): string => {
-  if (value === null || value === undefined || value === '') return ''
-  const num = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) : value
-  if (isNaN(num)) return String(value)
-  return num.toLocaleString('ko-KR')
-}
-
-// 품목별 다행 필드 포맷팅: 줄바꿈 유지, 숫자 줄은 천 단위 콤마 적용
-// (구버전 콤마 구분 데이터도 줄바꿈으로 변환)
-const formatMultiLineField = (value: any): string => {
-  if (value === null || value === undefined || value === '') return ''
-  const raw = String(value)
-  const lines = raw.includes('\n') ? raw.split('\n') : raw.split(/,\s*/)
-  return lines
-    .map((line) => {
-      const t = line.trim()
-      if (t === '') return ''
-      const num = parseFloat(t.replace(/,/g, ''))
-      return !isNaN(num) && /^[\d,]+$/.test(t) ? num.toLocaleString('ko-KR') : t
-    })
-    .join('\n')
+// 열 너비 (특정 필드만 개별 지정, 나머지는 기본값)
+const COLUMN_WIDTHS: Record<string, number> = {
+  _rowNumber: 5,
+  _sourceFile: 28,
+  contractTitle: 30,
+  contractContent: 50,
+  contractTerms: 50,
+  items: 24,
+  businessNumber: 16,
+  withholdingAgent: 22,
+  notes: 40,
 }
 
 // 헤더 스타일
@@ -179,59 +61,25 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
     // 각 문서 유형별로 시트 생성
     Object.entries(groupedResults).forEach(([docType, docResults]) => {
       const documentType = docType as DocumentType
-      // No.(첫 열) 다음에 '원본 파일명' 열을 공통 삽입 — 원본과 1:1 매칭 추적용
-      const baseHeaders = documentHeaders[documentType]
+      // No. + 원본 파일명(표 전용 열) 다음에 공용 표시 필드를 붙임 → 단일 화면과 동일한 필드·라벨
       const headers = [
-        baseHeaders[0],
+        { key: '_rowNumber', label: 'No.' },
         { key: '_sourceFile', label: '원본 파일명' },
-        ...baseHeaders.slice(1),
+        ...DOCUMENT_FIELDS[documentType],
       ]
 
-      // 헤더 행 생성
       const headerRow = headers.map((h) => h.label)
 
-      let dataRows: any[][]
-      let totalLines = 0
-
-      // 다른 문서 유형은 번호 추가
-      dataRows = docResults.map((result, idx) =>
+      const dataRows = docResults.map((result, idx) =>
         headers.map((h) => {
-          if (h.key === '_rowNumber') {
-            return idx + 1  // 1부터 시작하는 번호
-          }
-          if (h.key === '_sourceFile') {
-            return result.sourceFileName || ''
-          }
-          const value = result.fields[h.key]
-          if (multiLineItemFields.includes(h.key)) {
-            return formatMultiLineField(value)
-          }
-          if (numberFields.includes(h.key)) {
-            return formatNumber(value)
-          }
-          return value !== null && value !== undefined ? String(value) : ''
+          if (h.key === '_rowNumber') return idx + 1
+          if (h.key === '_sourceFile') return result.sourceFileName || ''
+          return formatFieldValue(h.key, result.fields[h.key])
         })
       )
-      totalLines = dataRows.length
 
-      // 시트 데이터 구성
-      const sheetData = [headerRow, ...dataRows]
-      const ws = XLSX.utils.aoa_to_sheet(sheetData)
-
-      // 컬럼 너비 설정
-      ws['!cols'] = headers.map((h) => {
-        if (h.key === '_rowNumber') return { wch: 5 }
-        if (h.key === '_sourceFile') return { wch: 28 }
-        if (h.key === 'contractTitle') return { wch: 30 }
-        if (h.key === 'contractContent') return { wch: 50 }
-        if (h.key === 'contractTerms') return { wch: 50 }
-        if (h.key === 'description') return { wch: 40 }
-        if (h.key === 'items') return { wch: 24 }
-        if (h.key === 'businessNumber') return { wch: 16 }
-        if (h.key === 'withholdingAgent') return { wch: 22 }
-        if (h.key === 'notes') return { wch: 40 }
-        return { wch: 15 }
-      })
+      const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows])
+      ws['!cols'] = headers.map((h) => ({ wch: COLUMN_WIDTHS[h.key] ?? 15 }))
 
       // 스타일 적용
       const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
@@ -243,25 +91,20 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
         }
       }
 
-      // 시트 추가
-      // 주의: 시트 이름에 : \ / ? * [ ] 사용 불가
-      const countLabel = `${docResults.length}건`
-      const sheetName = `${documentTypeLabels[documentType]}_${countLabel}`
+      // 시트 이름 (: \ / ? * [ ] 사용 불가, 31자 이하)
+      const sheetName = `${DOCUMENT_TYPE_LABELS[documentType]}_${docResults.length}건`.slice(0, 31)
       XLSX.utils.book_append_sheet(wb, ws, sheetName)
-
     })
 
-    // 파일 다운로드
     const now = new Date()
     const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    const fileName = `증빙_일괄추출_${dateStr}.xlsx`
-    XLSX.writeFile(wb, fileName)
+    XLSX.writeFile(wb, `증빙_일괄추출_${dateStr}.xlsx`)
   }
 
   // 문서 유형별 개수 계산
   const typeCounts: Record<string, number> = {}
   results.forEach((r) => {
-    const label = documentTypeLabels[r.documentType]
+    const label = DOCUMENT_TYPE_LABELS[r.documentType]
     typeCounts[label] = (typeCounts[label] || 0) + 1
   })
 
