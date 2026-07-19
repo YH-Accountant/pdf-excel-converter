@@ -179,7 +179,13 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
     // 각 문서 유형별로 시트 생성
     Object.entries(groupedResults).forEach(([docType, docResults]) => {
       const documentType = docType as DocumentType
-      const headers = documentHeaders[documentType]
+      // No.(첫 열) 다음에 '원본 파일명' 열을 공통 삽입 — 원본과 1:1 매칭 추적용
+      const baseHeaders = documentHeaders[documentType]
+      const headers = [
+        baseHeaders[0],
+        { key: '_sourceFile', label: '원본 파일명' },
+        ...baseHeaders.slice(1),
+      ]
 
       // 헤더 행 생성
       const headerRow = headers.map((h) => h.label)
@@ -192,6 +198,9 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
         headers.map((h) => {
           if (h.key === '_rowNumber') {
             return idx + 1  // 1부터 시작하는 번호
+          }
+          if (h.key === '_sourceFile') {
+            return result.sourceFileName || ''
           }
           const value = result.fields[h.key]
           if (multiLineItemFields.includes(h.key)) {
@@ -212,6 +221,7 @@ export default function BatchExcelDownload({ results }: BatchExcelDownloadProps)
       // 컬럼 너비 설정
       ws['!cols'] = headers.map((h) => {
         if (h.key === '_rowNumber') return { wch: 5 }
+        if (h.key === '_sourceFile') return { wch: 28 }
         if (h.key === 'contractTitle') return { wch: 30 }
         if (h.key === 'contractContent') return { wch: 50 }
         if (h.key === 'contractTerms') return { wch: 50 }

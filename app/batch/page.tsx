@@ -181,6 +181,7 @@ export default function BatchPage() {
       return data.documents.map((doc: any) => ({
         documentType: doc.documentType,
         fields: doc.fields,
+        sourceFileName: fileName,
       }))
     }
 
@@ -188,6 +189,7 @@ export default function BatchPage() {
     return [{
       documentType: data.documentType,
       fields: data.fields,
+      sourceFileName: fileName,
     }]
   }
 

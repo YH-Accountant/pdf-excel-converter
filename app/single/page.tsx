@@ -21,6 +21,7 @@ export interface ExtractedData {
   documentType: DocumentType
   fields: Record<string, any>
   rawText?: string
+  sourceFileName?: string  // 원본 파일명 (색인형 엑셀에서 원본과 1:1 매칭용)
 }
 
 const docTypes = ['계약서', '세금계산서', '거래명세서', '통장 입출금내역', '취득처분전표', '원천징수신고서', '견적서']
