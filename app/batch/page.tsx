@@ -6,6 +6,7 @@ import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
 import { checkImageQuality } from '@/lib/imageQuality'
+import { computePdfRenderScale } from '@/lib/pdfRender'
 
 interface ProcessingFile {
   file: File
@@ -61,7 +62,8 @@ export default function BatchPage() {
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
-      const scale = 3
+      const baseViewport = page.getViewport({ scale: 1.0 })
+      const scale = computePdfRenderScale(baseViewport.width, baseViewport.height)
       const viewport = page.getViewport({ scale })
 
       const canvas = document.createElement('canvas')

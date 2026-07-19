@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { checkImageQuality } from '@/lib/imageQuality'
+import { computePdfRenderScale } from '@/lib/pdfRender'
 
 interface FileUploadProps {
   onFilesSelect: (files: File[], pdfText?: string) => void
@@ -54,7 +55,8 @@ export default function FileUpload({ onFilesSelect, selectedFiles }: FileUploadP
     for (let i = 1; i <= pdf.numPages; i++) {
       setConversionStatus(`이미지 변환 중... (${i}/${pdf.numPages})`)
       const page = await pdf.getPage(i)
-      const scale = 3
+      const baseViewport = page.getViewport({ scale: 1.0 })
+      const scale = computePdfRenderScale(baseViewport.width, baseViewport.height)
       const viewport = page.getViewport({ scale })
 
       const canvas = document.createElement('canvas')

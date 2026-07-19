@@ -5,6 +5,7 @@ import Link from 'next/link'
 import * as pdfjsLib from 'pdfjs-dist'
 import XLSX from 'xlsx-js-style'
 import { matchEmployeesToTransactions, type EmployeeMatchResult } from '@/lib/payrollMatching'
+import { computePdfRenderScale } from '@/lib/pdfRender'
 
 interface PayrollEmployee {
   name: string
@@ -114,7 +115,8 @@ export default function PayrollPage() {
     const images: { base64: string; mediaType: string }[] = []
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
-      const scale = 3
+      const baseViewport = page.getViewport({ scale: 1.0 })
+      const scale = computePdfRenderScale(baseViewport.width, baseViewport.height)
       const viewport = page.getViewport({ scale })
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')!
