@@ -77,6 +77,11 @@ interface ProcessingFile {
   error?: string
 }
 
+// 연속 API 호출 사이의 최소 간격.
+// 호출 1건이 평균 10초 이상 걸려 실제 요청 빈도가 분당 5회 내외에 그치므로,
+// 속도 제한 여유는 충분하다. 12개월치 처리에서 이 대기가 36초를 차지해 1초로 줄인다.
+const API_CALL_INTERVAL_MS = 1000
+
 export default function PayrollPage() {
   const [files, setFiles] = useState<ProcessingFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
@@ -490,7 +495,7 @@ export default function PayrollPage() {
           ))
         }
 
-        if (i < sortedNonExcel.length - 1) await delay(3000)
+        if (i < sortedNonExcel.length - 1) await delay(API_CALL_INTERVAL_MS)
       }
 
       // Phase 2: 월별+사업장별 그룹 구성
@@ -567,7 +572,7 @@ export default function PayrollPage() {
         let excelCallCount = 0
 
         for (const targetMonth of monthsToProcess) {
-          if (excelCallCount > 0 || sortedNonExcel.length > 0) await delay(3000)
+          if (excelCallCount > 0 || sortedNonExcel.length > 0) await delay(API_CALL_INTERVAL_MS)
           excelCallCount++
 
           try {
