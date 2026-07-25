@@ -28,6 +28,35 @@ function postProcessFields(documentType: DocumentType, fields: Record<string, an
   return fields
 }
 
+// 같은 유형의 문서가 한 파일에 여러 건 들어있는 경우(여러 달치 이체확인증·원천징수신고서 등),
+// AI는 템플릿 지시에 따라 { isMultipleDocuments: true, documents: [...] } 형태로 반환한다.
+// 이 응답은 단일 문서의 fields 자리에 담겨 오므로, 소비자(batch/payroll)가 읽는 최상위로 승격한다.
+// (승격하지 않으면 여러 달치가 fields 안에 묻혀 1건으로만 처리된다)
+function buildExtractionResponse(
+  documentType: DocumentType,
+  rawFields: Record<string, any>,
+  extractionMethod: string
+) {
+  if (rawFields?.isMultipleDocuments && Array.isArray(rawFields.documents)) {
+    const documents = rawFields.documents.map((doc: any) => {
+      const type = (doc?.documentType || documentType) as DocumentType
+      return { documentType: type, fields: postProcessFields(type, doc?.fields || {}) }
+    })
+    console.log(`=== 동일 유형 다중 문서 승격: ${documentType} ${documents.length}건 ===`)
+    return NextResponse.json({
+      isMultipleDocuments: true,
+      documents,
+      extractionMethod: `${extractionMethod}-multi`,
+    })
+  }
+
+  return NextResponse.json({
+    documentType,
+    fields: postProcessFields(documentType, rawFields),
+    extractionMethod,
+  })
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -65,14 +94,8 @@ export async function POST(request: NextRequest) {
 
       // 사용자가 문서 유형을 지정한 경우: 단일 문서 추출
       if (documentTypeParam) {
-        let fields = await extractFromText(pdfText, documentTypeParam)
-        fields = postProcessFields(documentTypeParam, fields)
-
-        return NextResponse.json({
-          documentType: documentTypeParam,
-          fields,
-          extractionMethod: 'text',
-        })
+        const rawFields = await extractFromText(pdfText, documentTypeParam)
+        return buildExtractionResponse(documentTypeParam, rawFields, 'text')
       }
 
       // 문서 유형 미지정: 다중 문서 유형 감지 시도
@@ -99,16 +122,10 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // 단일 문서 유형만 감지된 경우
+      // 단일 문서 유형만 감지된 경우 (같은 유형이 여러 건이면 buildExtractionResponse가 분리)
       const documentType = detectedTypes[0] || await detectDocumentTypeFromText(pdfText)
-      let fields = await extractFromText(pdfText, documentType)
-      fields = postProcessFields(documentType, fields)
-
-      return NextResponse.json({
-        documentType,
-        fields,
-        extractionMethod: 'text',
-      })
+      const rawFields = await extractFromText(pdfText, documentType)
+      return buildExtractionResponse(documentType, rawFields, 'text')
     }
 
     // 이미지 기반 추출 (fallback)

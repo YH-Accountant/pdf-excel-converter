@@ -290,9 +290,26 @@ export const documentTemplates: Record<DocumentType, {
    - 소득세의 10%로 계산
    - 예: incomeTax가 20420000이면 localIncomeTax는 2042000
 
+[여러 달 신고서 처리 ★ 중요]
+귀속연월이 여러 개인 경우(여러 달치 신고서가 한 파일에 묶인 경우)
+→ 반드시 isMultipleDocuments: true로 각 달을 별도 문서로 분리해서 반환
+
+응답 형식 - 여러 달 신고서:
+{
+  "isMultipleDocuments": true,
+  "documents": [
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", "numberOfPeople": 8, "totalPayment": 24950330, "incomeTax": 873220, "localIncomeTax": 87280 } },
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-02", "paymentYearMonth": "2025-03", "numberOfPeople": 8, "totalPayment": 25417170, "incomeTax": 889560, "localIncomeTax": 88920 } }
+  ]
+}
+
+응답 형식 - 단일 신고서:
+{ "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", ... }
+
 [중요]
 - 원천징수영수증도 이 템플릿으로 처리합니다
 - 지방소득세는 소득세의 10%입니다
+- 여러 달이 묶여 있으면 절대 한 건으로 합치지 말고 달별로 나눌 것
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
 
