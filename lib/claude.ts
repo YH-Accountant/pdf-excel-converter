@@ -166,7 +166,8 @@ export interface DocumentSection {
 export async function detectMultipleDocumentTypesFromText(pdfText: string): Promise<DocumentSection[]> {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    // 여러 달치 문서가 한 파일에 묶인 경우 문서별로 나눠 반환하므로 출력 여유를 둔다
+    max_tokens: 8192,
     messages: [
       {
         role: 'user',
@@ -290,7 +291,8 @@ async function extractWithTextTemplateForType(
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    // 여러 달치 문서가 한 파일에 묶인 경우 문서별로 나눠 반환하므로 출력 여유를 둔다
+    max_tokens: 8192,
     messages: [
       {
         role: 'user',
@@ -341,7 +343,8 @@ export async function extractWithTextTemplate(
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    // 여러 달치 문서가 한 파일에 묶인 경우 문서별로 나눠 반환하므로 출력 여유를 둔다
+    max_tokens: 8192,
     messages: [
       {
         role: 'user',
@@ -443,7 +446,8 @@ JSON 형식으로 응답해주세요. 찾을 수 없는 정보는 null로 표시
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    // 여러 달치 문서가 한 파일에 묶인 경우 문서별로 나눠 반환하므로 출력 여유를 둔다
+    max_tokens: 8192,
     messages: [
       {
         role: 'user',

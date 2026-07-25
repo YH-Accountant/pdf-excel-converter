@@ -197,11 +197,14 @@ export default function PayrollPage() {
   const parseBankTransfersFromOcrText = (text: string): Array<{ transactionDate: string; totalWithdrawal: number; companyDivision: string }> => {
     const results: Array<{ transactionDate: string; totalWithdrawal: number; companyDivision: string }> = []
 
-    // 사업장명 추출: "(주)가상물산 제1공장" → "제1공장"
-    const companyMatch = text.match(/\([주株]\)\s*[^\s\n]+\s+([가-힣]+(?:공장|본사|지사|센터|사업장))/)
+    // 사업장명 추출: "(주)가상물산 서울공장" → "서울공장"
+    // 숫자가 섞인 구분명("제1공장")도 인식되도록 한글·숫자를 모두 허용한다
+    const companyMatch = text.match(/\([주株]\)\s*[^\s\n]+\s+([가-힣0-9]+(?:공장|본사|지사|센터|사업장))/)
     const companyDivision = companyMatch ? companyMatch[1].trim() : ''
 
-    const pages = text.split(/===\s*페이지\s*\d+\s*===/).filter((p) => p.trim())
+    // 페이지 구분자: OCR 라우트는 "[페이지 N]" 형식으로 출력한다.
+    // ("=== 페이지 N ===" 형식만 인식하면 여러 달 묶음이 한 덩어리로 처리되어 1건만 잡힘)
+    const pages = text.split(/===\s*페이지\s*\d+\s*===|\[페이지\s*\d+\]/).filter((p) => p.trim())
     for (const page of pages) {
       const dateMatch = page.match(/(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}/)
       const amountMatch = page.match(/(\d+)건\s*\/\s*([\d,]+)원/)
