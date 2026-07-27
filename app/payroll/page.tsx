@@ -629,6 +629,7 @@ export default function PayrollPage() {
 
           const monthLabel = targetMonth ?? '(귀속월 미상)'
           let appliedToGroup = false
+          let wrongMonthReturned = ''
 
           try {
             const result = await processFileWithRetry(excelFileItem, targetMonth)
@@ -637,6 +638,15 @@ export default function PayrollPage() {
             for (const doc of documents) {
               if (doc.documentType === 'payroll') {
                 const payrollMonth = doc.fields.paymentYearMonth || ''
+
+                // 요청한 달의 시트가 급여대장에 없으면 다른 달 시트가 대신 넘어온다.
+                // 그대로 반영하면 엉뚱한 달의 급여가 붙고, 정작 요청한 달은 빈 채로
+                // 남으면서도 성공으로 집계된다. 그 달은 자기 차례에 따로 처리되므로
+                // 여기서는 반영하지 않고 누락으로 남긴다.
+                if (targetMonth && payrollMonth && payrollMonth !== targetMonth) {
+                  wrongMonthReturned = payrollMonth
+                  continue
+                }
 
                 // 귀속월로 그룹 찾기
                 let targetGroup = payrollMonth ? groupMap.get(payrollMonth) : null
@@ -693,8 +703,9 @@ export default function PayrollPage() {
             // 급여대장으로 인식되지 않은 것인지, 귀속월이 안 맞아 붙일 곳이 없었던 것인지 구분한다.
             if (!appliedToGroup) {
               const payrollDocs = documents.filter((d: any) => d.documentType === 'payroll')
-              const reason =
-                payrollDocs.length === 0
+              const reason = wrongMonthReturned
+                ? `급여대장에 해당 월 시트가 없음 (대신 ${wrongMonthReturned} 시트가 조회됨)`
+                : payrollDocs.length === 0
                   ? '급여대장으로 인식되지 않음'
                   : `추출된 귀속월(${payrollDocs.map((d: any) => d.fields?.paymentYearMonth || '없음').join(', ')})이 원천징수신고서의 월과 맞지 않음`
               console.warn(`급여대장 ${monthLabel} 미반영: ${reason}`)
