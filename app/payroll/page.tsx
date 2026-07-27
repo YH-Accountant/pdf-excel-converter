@@ -82,12 +82,34 @@ interface ProcessingFile {
 // 속도 제한 여유는 충분하다. 12개월치 처리에서 이 대기가 36초를 차지해 1초로 줄인다.
 const API_CALL_INTERVAL_MS = 1000
 
+// 재시도 대기 시간(ms). 속도 제한은 분 단위로 풀리므로 간격을 배로 늘려가며 기다린다.
+const RETRY_DELAYS_MS = [2000, 4000, 8000]
+
+// 추출 API 실패를 상태 코드와 함께 전달한다.
+// 재시도해서 될 오류(429·5xx)와 그렇지 않은 오류를 호출 측에서 구분하기 위함.
+class ExtractionError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ExtractionError'
+    this.status = status
+  }
+}
+
+const isRetryableError = (err: unknown): boolean => {
+  const status = (err as ExtractionError)?.status
+  return typeof status === 'number' && (status === 429 || status >= 500)
+}
+
 export default function PayrollPage() {
   const [files, setFiles] = useState<ProcessingFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [monthGroups, setMonthGroups] = useState<MonthGroup[]>([])
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 처리 도중 조용히 건너뛴 자료를 사용자에게 알리기 위한 경고 목록.
+  // 일부가 빠진 채 결과가 "정상"처럼 보이는 것이 이 도구에서 가장 위험한 동작이다.
+  const [warnings, setWarnings] = useState<string[]>([])
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -353,21 +375,46 @@ export default function PayrollPage() {
 
     const response = await fetch('/api/extract', { method: 'POST', body: formData })
     if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || '추출 실패')
+      const errorData = await response.json().catch(() => ({} as { error?: string }))
+      throw new ExtractionError(errorData.error || '추출 실패', response.status)
     }
     return response.json()
   }
 
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+  // 속도 제한(429)·서버 과부하(5xx)는 잠시 뒤 다시 부르면 성공하는 일시적 오류다.
+  // 12개월치처럼 호출이 연속될 때는 한 번 튕기면 남은 달이 줄줄이 실패하므로
+  // 대기 시간을 늘려가며 다시 시도한다. 그 외 오류(잘못된 요청 등)는 재시도해도
+  // 결과가 같으므로 즉시 던진다.
+  const processFileWithRetry = async (
+    fileItem: ProcessingFile,
+    targetAttributionYearMonth?: string,
+    forceOcr = false
+  ): Promise<any> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await processFile(fileItem, targetAttributionYearMonth, forceOcr)
+      } catch (err) {
+        if (attempt >= RETRY_DELAYS_MS.length || !isRetryableError(err)) throw err
+        console.warn(
+          `추출 재시도 ${attempt + 1}/${RETRY_DELAYS_MS.length} (${RETRY_DELAYS_MS[attempt]}ms 후): ${(err as Error).message}`
+        )
+        await delay(RETRY_DELAYS_MS[attempt])
+      }
+    }
+  }
+
   const runCrossCheck = async () => {
     if (files.length === 0) { setError('파일을 업로드해주세요.'); return }
 
     setIsProcessing(true)
     setError(null)
+    setWarnings([])
     setMonthGroups([])
     setExpandedMonth(null)
+
+    const collectedWarnings: string[] = []
 
     const pendingFiles = files.filter((f) => f.status === 'pending')
     const excelFiles = pendingFiles.filter(isExcelFile)
@@ -411,7 +458,7 @@ export default function PayrollPage() {
             }
           }
 
-          let result = await processFile(fileItem)
+          let result = await processFileWithRetry(fileItem)
           let documents = result.isMultipleDocuments ? result.documents : [result]
 
           // bankStatement 날짜 없으면 regex 직접 파싱 (금액만 있고 날짜 없는 경우도 포함)
@@ -437,7 +484,7 @@ export default function PayrollPage() {
                 }))
               } else {
                 // regex도 실패 → Claude 마지막 시도
-                result = await processFile(fileItem, undefined, true)
+                result = await processFileWithRetry(fileItem, undefined, true)
                 documents = result.isMultipleDocuments ? result.documents : [result]
               }
             }
@@ -490,8 +537,11 @@ export default function PayrollPage() {
               : f
           ))
         } catch (err) {
+          const message = (err as Error).message || '추출 실패'
+          console.error(`${fileItem.file.name} 처리 실패:`, err)
+          collectedWarnings.push(`${fileItem.file.name}: ${message}`)
           setFiles((prev) => prev.map((f, idx) =>
-            idx === fileIndex ? { ...f, status: 'error', error: (err as Error).message } : f
+            idx === fileIndex ? { ...f, status: 'error', error: message } : f
           ))
         }
 
@@ -570,13 +620,18 @@ export default function PayrollPage() {
         setFiles((prev) => prev.map((f, idx) => idx === fileIndex ? { ...f, status: 'processing' } : f))
 
         let excelCallCount = 0
+        // 이 파일에서 결과에 반영되지 못한 월. 조용히 건너뛰지 않고 화면에 알린다.
+        const skippedMonths: string[] = []
 
         for (const targetMonth of monthsToProcess) {
           if (excelCallCount > 0 || sortedNonExcel.length > 0) await delay(API_CALL_INTERVAL_MS)
           excelCallCount++
 
+          const monthLabel = targetMonth ?? '(귀속월 미상)'
+          let appliedToGroup = false
+
           try {
-            const result = await processFile(excelFileItem, targetMonth)
+            const result = await processFileWithRetry(excelFileItem, targetMonth)
             const documents = result.isMultipleDocuments ? result.documents : [result]
 
             for (const doc of documents) {
@@ -629,17 +684,45 @@ export default function PayrollPage() {
                     totalNetPay: doc.fields.totalNetPay || 0,
                     totalGrossPay: doc.fields.totalGrossPay || 0,
                   }
+                  appliedToGroup = true
                 }
               }
             }
-          } catch {
-            // 개별 시트 실패 시 다음 월 계속 진행
+
+            // 호출은 성공했지만 결과에 반영되지 못한 경우.
+            // 급여대장으로 인식되지 않은 것인지, 귀속월이 안 맞아 붙일 곳이 없었던 것인지 구분한다.
+            if (!appliedToGroup) {
+              const payrollDocs = documents.filter((d: any) => d.documentType === 'payroll')
+              const reason =
+                payrollDocs.length === 0
+                  ? '급여대장으로 인식되지 않음'
+                  : `추출된 귀속월(${payrollDocs.map((d: any) => d.fields?.paymentYearMonth || '없음').join(', ')})이 원천징수신고서의 월과 맞지 않음`
+              console.warn(`급여대장 ${monthLabel} 미반영: ${reason}`)
+              skippedMonths.push(monthLabel)
+              collectedWarnings.push(`급여대장 ${monthLabel}: ${reason}`)
+            }
+          } catch (err) {
+            // 한 달이 실패해도 나머지 달은 계속 처리하되, 실패 사실은 반드시 남긴다
+            const message = (err as Error).message || '추출 실패'
+            console.error(`급여대장 ${monthLabel} 처리 실패:`, err)
+            skippedMonths.push(monthLabel)
+            collectedWarnings.push(`급여대장 ${monthLabel}: ${message}`)
           }
         }
 
+        const succeededCount = monthsToProcess.length - skippedMonths.length
         setFiles((prev) => prev.map((f, idx) =>
           idx === fileIndex
-            ? { ...f, status: 'completed', documentType: monthsToProcess.length > 1 ? `payroll (${monthsToProcess.length}개월)` : 'payroll' }
+            ? {
+                ...f,
+                // 일부만 읽혔는데 "완료"로 표시하면 빠진 달을 모르고 넘어가게 된다
+                status: skippedMonths.length > 0 ? 'error' : 'completed',
+                error: skippedMonths.length > 0 ? `${skippedMonths.length}개월 읽기 실패` : undefined,
+                documentType:
+                  monthsToProcess.length > 1
+                    ? `payroll (${succeededCount}/${monthsToProcess.length}개월)`
+                    : 'payroll',
+              }
             : f
         ))
       }
@@ -719,6 +802,7 @@ export default function PayrollPage() {
       console.error('크로스체크 오류:', err)
       setError(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.')
     } finally {
+      setWarnings(collectedWarnings)
       setIsProcessing(false)
     }
   }
@@ -730,6 +814,7 @@ export default function PayrollPage() {
     setMonthGroups([])
     setExpandedMonth(null)
     setError(null)
+    setWarnings([])
   }
 
   const formatNumber = (num: number) => new Intl.NumberFormat('ko-KR').format(num)
@@ -886,6 +971,20 @@ export default function PayrollPage() {
           {/* 에러 */}
           {error && (
             <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100">{error}</div>
+          )}
+
+          {/* 누락 경고 — 일부 자료가 빠진 채 결과가 정상처럼 보이는 것을 막는다 */}
+          {warnings.length > 0 && (
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+              <p className="text-sm font-medium text-amber-900">
+                읽지 못한 자료가 {warnings.length}건 있습니다 — 아래 결과는 그만큼 빠져 있습니다
+              </p>
+              <ul className="space-y-1">
+                {warnings.map((w, i) => (
+                  <li key={i} className="text-xs text-amber-800">· {w}</li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {/* 감지된 문서 */}

@@ -191,9 +191,17 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('추출 오류:', error)
+    // Anthropic SDK 오류는 상태 코드를 갖고 있다. 속도 제한(429)·과부하(529)는
+    // 잠시 뒤 재시도하면 성공하는 일시적 오류이므로, 500으로 뭉개지 않고
+    // 그대로 전달해 클라이언트가 재시도 가능 여부를 판단할 수 있게 한다.
+    const upstreamStatus = (error as { status?: unknown })?.status
+    const status =
+      typeof upstreamStatus === 'number' && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : 500
     return NextResponse.json(
       { error: error instanceof Error ? error.message : '추출 중 오류가 발생했습니다.' },
-      { status: 500 }
+      { status }
     )
   }
 }
