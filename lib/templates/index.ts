@@ -270,25 +270,36 @@ export const documentTemplates: Record<DocumentType, {
    - 명시되지 않은 경우에만 귀속년월의 다음 달로 설정 (예: 귀속 2025-01 → "2025-02")
    - 예: "2025-02"
 
+★ 이행상황신고서는 소득구분별로 행이 나뉜다(A01 간이세액, A02 중도퇴사, A04 연말정산,
+  A25 사업소득, A42 기타소득, A10 가감계, A99 총합계 등).
+  아래 3~5번은 급여대장과 대사하기 위한 값이므로 **근로소득 "간이세액(A01)" 행**에서 읽을 것.
+  (A10 가감계나 A99 총합계에는 연말정산·사업소득 등이 섞여 급여대장과 맞지 않는다.
+   단, A01만 값이 있는 평월에는 세 값이 같으므로 그대로 사용하면 된다)
+
 3. numberOfPeople (인원수)
    - 숫자만
-   - 이행상황신고서: 신고서의 인원 수
+   - 이행상황신고서: **A01 행의 "④인원"**
    - 원천징수영수증: 1 (개인별 발급)
 
 4. totalPayment (총 지급액)
    - 숫자만 (콤마 없이)
-   - 이행상황신고서: "총지급액" 항목
+   - 이행상황신고서: **A01 행의 "⑤총지급액"**
+   - 참고: 이 값은 서식상 "과세미달·일부 비과세 포함" 금액이라
+     급여대장의 지급총액과는 식대·자가운전보조금 등만큼 차이가 날 수 있다(정상)
    - 원천징수영수증: "총급여액" 또는 "급여총액" 항목
    - 예: 264000000
 
 5. incomeTax (소득세)
    - 숫자만 (콤마 없이)
+   - 이행상황신고서: **A01 행의 "⑥소득세 등"** (징수세액)
+   - ★ "⑩소득세 등(가산세 포함)"은 납부세액이므로 사용하지 말 것
    - 예: 20420000
 
 6. localIncomeTax (지방소득세)
    - 숫자만 (콤마 없이)
-   - 소득세의 10%로 계산
-   - 예: incomeTax가 20420000이면 localIncomeTax는 2042000
+   - ★ 원천징수이행상황신고서 서식에는 지방소득세 칸이 없다(위택스에 별도 신고).
+     문서에 지방소득세가 실제로 적혀 있을 때만 추출하고, 없으면 null로 둘 것
+   - 추측해서 소득세의 10%를 계산해 넣지 말 것
 
 [여러 달 신고서 처리 ★ 중요]
 귀속연월이 여러 개인 경우(여러 달치 신고서가 한 파일에 묶인 경우)
@@ -377,7 +388,7 @@ export const documentTemplates: Record<DocumentType, {
 
   payroll: {
     label: '급여대장',
-    fields: ['companyDivision', 'paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay', 'totalGrossPay'],
+    fields: ['companyDivision', 'paymentYearMonth', 'paymentDate', 'companyName', 'employees', 'totalNetPay', 'totalGrossPay', 'totalIncomeTax', 'totalLocalIncomeTax'],
     prompt: `당신은 급여대장 분석 전문가입니다. 아래 급여대장(더존 등 회계프로그램 출력물)에서 핵심 정보를 정확하게 추출해주세요.
 
 [추출 규칙]
@@ -420,8 +431,22 @@ export const documentTemplates: Record<DocumentType, {
 6. totalGrossPay (총지급액 합계)
    - 모든 직원의 지급총액(grossPay) 합계 (공제 전 금액)
    - 숫자만 (콤마 없이)
-   - 원천징수이행상황신고서의 총지급액과 비교하는 데 사용됨
    - 예: 29800000
+
+7. totalIncomeTax (소득세 합계) ★ 원천징수신고서 대사용 — 정확히 추출할 것
+   - 급여대장 공제 항목 중 "소득세" 열의 합계 (합계 행이 있으면 그 값을 사용)
+   - 열 이름은 회사마다 다를 수 있음: "소득세", "근로소득세", "갑근세", "소득세(갑)" 등
+   - ★ "연말정산소득세", "연말정산" 이 붙은 열은 절대 포함하지 말 것
+     (매월분 간이세액만 필요하며, 연말정산분은 신고서의 다른 칸에 신고됨)
+   - ★ "지방소득세"·"주민세"는 소득세가 아님 — 아래 8번 필드에 별도로 넣을 것
+   - 소득세 열을 찾을 수 없으면 null
+   - 예: 836500
+
+8. totalLocalIncomeTax (지방소득세 합계)
+   - "지방소득세" 또는 "주민세" 열의 합계 (합계 행이 있으면 그 값)
+   - ★ "연말정산지방소득세"는 제외
+   - 찾을 수 없으면 null
+   - 예: 83630
 
 [응답 형식]
 {
@@ -433,7 +458,9 @@ export const documentTemplates: Record<DocumentType, {
     { "name": "김철수", "baseSalary": 2800000, "allowances": 300000, "grossPay": 3100000, "deductions": 350000, "netPay": 2750000 }
   ],
   "totalNetPay": 5850000,
-  "totalGrossPay": 6600000
+  "totalGrossPay": 6600000,
+  "totalIncomeTax": 231000,
+  "totalLocalIncomeTax": 23100
 }
 
 [중요]

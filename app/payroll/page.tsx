@@ -27,6 +27,8 @@ interface PayrollData {
   employees: PayrollEmployee[]
   totalNetPay: number
   totalGrossPay: number
+  totalIncomeTax: number
+  totalLocalIncomeTax: number
 }
 
 interface BankData {
@@ -66,6 +68,12 @@ interface MonthGroup {
   attributionMonthMatched: boolean
   paymentMonthMatched: boolean
   hasComparableTotals: boolean
+  // 소득세 대사 (비과세와 무관하므로 확정 판정 가능)
+  payrollIncomeTax: number
+  incomeTaxReliable: boolean   // 지방소득세 = 소득세×10% 검산 통과 여부
+  incomeTaxMatched: boolean
+  // 인원 대사
+  headcountMatched: boolean
   individualMatches: MatchResult[]
 }
 
@@ -99,6 +107,13 @@ class ExtractionError extends Error {
 const isRetryableError = (err: unknown): boolean => {
   const status = (err as ExtractionError)?.status
   return typeof status === 'number' && (status === 429 || status >= 500)
+}
+
+// AI가 "836,500"처럼 문자열로 돌려주는 경우가 있어 숫자로 정규화한다
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number') return isNaN(value) ? 0 : value
+  if (typeof value === 'string') return parseInt(value.replace(/[^0-9-]/g, ''), 10) || 0
+  return 0
 }
 
 export default function PayrollPage() {
@@ -578,6 +593,10 @@ export default function PayrollPage() {
             attributionMonthMatched: false,
             paymentMonthMatched: false,
             hasComparableTotals: false,
+            payrollIncomeTax: 0,
+            incomeTaxReliable: false,
+            incomeTaxMatched: false,
+            headcountMatched: false,
             individualMatches: [],
           })
         }
@@ -599,6 +618,10 @@ export default function PayrollPage() {
           attributionMonthMatched: false,
           paymentMonthMatched: false,
           hasComparableTotals: false,
+          payrollIncomeTax: 0,
+          incomeTaxReliable: false,
+          incomeTaxMatched: false,
+          headcountMatched: false,
           individualMatches: [],
         })
       }
@@ -693,6 +716,8 @@ export default function PayrollPage() {
                     employees: doc.fields.employees || [],
                     totalNetPay: doc.fields.totalNetPay || 0,
                     totalGrossPay: doc.fields.totalGrossPay || 0,
+                    totalIncomeTax: toNumber(doc.fields.totalIncomeTax),
+                    totalLocalIncomeTax: toNumber(doc.fields.totalLocalIncomeTax),
                   }
                   appliedToGroup = true
                 }
@@ -785,6 +810,32 @@ export default function PayrollPage() {
           !!group.paymentMonth &&
           bankTransferMonths.every((m) => m === group.paymentMonth)
 
+        // ── 소득세 대사 (비과세와 무관해 확정 판정이 가능한 항목)
+        // 급여대장에서 "소득세" 열을 제대로 잡았는지 먼저 코드가 검산한다.
+        // 지방소득세 = 소득세의 10%는 법정 고정 비율이므로, 이 관계가 깨지면
+        // 옆 열(지방소득세·연말정산소득세)을 잘못 읽었을 가능성이 크다 → 대사를 하지 않는다.
+        const payrollIncomeTax = group.payroll?.totalIncomeTax || 0
+        const payrollLocalIncomeTax = group.payroll?.totalLocalIncomeTax || 0
+        const headcount = group.payroll?.employees?.length || 0
+        // 개인별 원 단위 절사로 인한 합계 오차 허용 (인원 × 10원 + 여유)
+        const localTaxTolerance = headcount * 10 + 100
+        const incomeTaxReliable =
+          payrollIncomeTax > 0 &&
+          payrollLocalIncomeTax > 0 &&
+          Math.abs(payrollLocalIncomeTax - payrollIncomeTax * 0.1) <= localTaxTolerance
+
+        const withholdingIncomeTax = group.withholding?.incomeTax || 0
+        const incomeTaxMatched =
+          incomeTaxReliable &&
+          withholdingIncomeTax > 0 &&
+          Math.abs(payrollIncomeTax - withholdingIncomeTax) < 100
+
+        // ── 인원 대사
+        const headcountMatched =
+          headcount > 0 &&
+          (group.withholding?.numberOfPeople || 0) > 0 &&
+          headcount === group.withholding?.numberOfPeople
+
         let individualMatches: MatchResult[] = []
         if (group.payroll?.employees && group.payroll.employees.length > 0) {
           const allTx = group.bankList.flatMap((b) => b.transactions)
@@ -802,6 +853,10 @@ export default function PayrollPage() {
           attributionMonthMatched,
           paymentMonthMatched,
           hasComparableTotals,
+          payrollIncomeTax,
+          incomeTaxReliable,
+          incomeTaxMatched,
+          headcountMatched,
           individualMatches,
         })
       }
@@ -1032,6 +1087,8 @@ export default function PayrollPage() {
                       <th className="text-right py-3 px-4 font-medium text-gray-500">이체출금</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">귀속월</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">지급월</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">인원</th>
+                      <th className="text-center py-3 px-4 font-medium text-gray-500">소득세</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">결과</th>
                     </tr>
                   </thead>
@@ -1039,7 +1096,7 @@ export default function PayrollPage() {
                     {monthGroups.flatMap((group) => {
                       const isExpanded = expandedMonth === group.groupKey
                       const hasIndividual = group.individualMatches.length > 0
-                      const colSpan = 7
+                      const colSpan = 9
 
                       const mainRow = (
                         <tr
@@ -1065,14 +1122,17 @@ export default function PayrollPage() {
                           </td>
                           <td className="text-right py-3 px-4 tabular-nums">
                             <div>{group.withholdingTotal > 0 ? formatNumber(group.withholdingTotal) : '-'}</div>
-                            {group.payrollGrossTotal > 0 && (
+                            {/* 급여대장 지급총액과의 차이는 판정하지 않고 참고로만 표시한다.
+                                신고서 총지급액은 식대·자가운전보조금 등 비과세가 빠진 금액이라
+                                지급총액과 다른 것이 정상이기 때문 */}
+                            {group.payrollGrossTotal > 0 && group.withholdingTotal > 0 && (
                               <div
                                 className="text-xs text-gray-400 mt-0.5"
-                                title="급여대장 지급총액은 비과세(식대·자가운전보조금 등)를 포함하고, 신고서 총지급액은 제외한 과세대상 금액입니다. 두 값의 차이는 대부분 비과세액이므로 일치 여부를 판정하지 않습니다."
+                                title="신고서 총지급액은 식대·자가운전보조금 등 비과세를 제외한 금액이라 급여대장 지급총액과 차이가 나는 것이 정상입니다."
                               >
                                 급여총액 {formatNumber(group.payrollGrossTotal)}
-                                {group.withholdingTotal > 0 && (
-                                  <> · 차이 {formatNumber(Math.abs(group.payrollGrossTotal - group.withholdingTotal))}</>
+                                {Math.abs(group.payrollGrossTotal - group.withholdingTotal) >= 1000 && (
+                                  <> · 차이 {formatNumber(group.payrollGrossTotal - group.withholdingTotal)} (비과세 고려)</>
                                 )}
                               </div>
                             )}
@@ -1096,6 +1156,30 @@ export default function PayrollPage() {
                                 {group.paymentMonthMatched ? '✓' : '✗'}
                               </span>
                             ) : <span className="text-gray-300">-</span>}
+                          </td>
+                          {/* 인원 대사 — 비과세와 무관하게 정확히 일치해야 하는 항목 */}
+                          <td className="text-center py-3 px-4">
+                            {(group.payroll?.employees?.length || 0) > 0 && (group.withholding?.numberOfPeople || 0) > 0 ? (
+                              <span
+                                className={group.headcountMatched ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}
+                                title={`급여대장 ${group.payroll?.employees?.length}명 / 신고서 ${group.withholding?.numberOfPeople}명`}
+                              >
+                                {group.headcountMatched ? '✓' : '✗'}
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
+                          {/* 소득세 대사 — 비과세와 무관. 급여대장 소득세 열을 제대로 읽었을 때만 판정 */}
+                          <td className="text-center py-3 px-4">
+                            {group.incomeTaxReliable && (group.withholding?.incomeTax || 0) > 0 ? (
+                              <span
+                                className={group.incomeTaxMatched ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}
+                                title={`급여대장 ${formatNumber(group.payrollIncomeTax)} / 신고서 ${formatNumber(group.withholding?.incomeTax || 0)}`}
+                              >
+                                {group.incomeTaxMatched ? '✓' : '✗'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300" title="급여대장에서 소득세 열을 확인하지 못해 대사하지 않았습니다">-</span>
+                            )}
                           </td>
                           <td className="text-center py-3 px-4">
                             {group.hasComparableTotals ? (
