@@ -65,7 +65,7 @@ interface MonthGroup {
   isMatched: boolean
   attributionMonthMatched: boolean
   paymentMonthMatched: boolean
-  withholdingMatchesGross: boolean
+  hasComparableTotals: boolean
   individualMatches: MatchResult[]
 }
 
@@ -577,7 +577,7 @@ export default function PayrollPage() {
             isMatched: false,
             attributionMonthMatched: false,
             paymentMonthMatched: false,
-            withholdingMatchesGross: false,
+            hasComparableTotals: false,
             individualMatches: [],
           })
         }
@@ -598,7 +598,7 @@ export default function PayrollPage() {
           isMatched: false,
           attributionMonthMatched: false,
           paymentMonthMatched: false,
-          withholdingMatchesGross: false,
+          hasComparableTotals: false,
           individualMatches: [],
         })
       }
@@ -769,11 +769,11 @@ export default function PayrollPage() {
           0
         const bankTotal = group.bankList.reduce((sum, b) => sum + b.totalWithdrawal, 0)
         const difference = payrollTotal - bankTotal
-        const isMatched = Math.abs(difference) < 100
-        const withholdingMatchesGross =
-          (group.withholding?.totalPayment || 0) > 0 &&
-          payrollGrossTotal > 0 &&
-          Math.abs((group.withholding?.totalPayment || 0) - payrollGrossTotal) < 1000
+        // 급여대장·이체 중 하나라도 없으면 대사가 성립하지 않는다.
+        // 이 조건이 없으면 둘 다 0인 빈 행이 "차이 0 = 일치"로 판정되어
+        // 자료가 빠진 달이 정상처럼 보인다.
+        const hasComparableTotals = payrollTotal > 0 && bankTotal > 0
+        const isMatched = hasComparableTotals && Math.abs(difference) < 100
 
         const attributionMonthMatched =
           !!group.payroll?.yearMonth &&
@@ -801,7 +801,7 @@ export default function PayrollPage() {
           isMatched,
           attributionMonthMatched,
           paymentMonthMatched,
-          withholdingMatchesGross,
+          hasComparableTotals,
           individualMatches,
         })
       }
@@ -1032,7 +1032,6 @@ export default function PayrollPage() {
                       <th className="text-right py-3 px-4 font-medium text-gray-500">이체출금</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">귀속월</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">지급월</th>
-                      <th className="text-center py-3 px-4 font-medium text-gray-500">총액</th>
                       <th className="text-center py-3 px-4 font-medium text-gray-500">결과</th>
                     </tr>
                   </thead>
@@ -1040,7 +1039,7 @@ export default function PayrollPage() {
                     {monthGroups.flatMap((group) => {
                       const isExpanded = expandedMonth === group.groupKey
                       const hasIndividual = group.individualMatches.length > 0
-                      const colSpan = 8
+                      const colSpan = 7
 
                       const mainRow = (
                         <tr
@@ -1067,11 +1066,14 @@ export default function PayrollPage() {
                           <td className="text-right py-3 px-4 tabular-nums">
                             <div>{group.withholdingTotal > 0 ? formatNumber(group.withholdingTotal) : '-'}</div>
                             {group.payrollGrossTotal > 0 && (
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                급여총액: {formatNumber(group.payrollGrossTotal)}
-                                <span className={`ml-1 font-medium ${group.withholdingMatchesGross ? 'text-green-500' : 'text-red-500'}`}>
-                                  {group.withholdingMatchesGross ? '✓' : '✗'}
-                                </span>
+                              <div
+                                className="text-xs text-gray-400 mt-0.5"
+                                title="급여대장 지급총액은 비과세(식대·자가운전보조금 등)를 포함하고, 신고서 총지급액은 제외한 과세대상 금액입니다. 두 값의 차이는 대부분 비과세액이므로 일치 여부를 판정하지 않습니다."
+                              >
+                                급여총액 {formatNumber(group.payrollGrossTotal)}
+                                {group.withholdingTotal > 0 && (
+                                  <> · 차이 {formatNumber(Math.abs(group.payrollGrossTotal - group.withholdingTotal))}</>
+                                )}
                               </div>
                             )}
                           </td>
@@ -1096,18 +1098,20 @@ export default function PayrollPage() {
                             ) : <span className="text-gray-300">-</span>}
                           </td>
                           <td className="text-center py-3 px-4">
-                            {group.withholdingTotal > 0 && group.payrollGrossTotal > 0 ? (
-                              <span className={group.withholdingMatchesGross ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
-                                {group.withholdingMatchesGross ? '✓' : '✗'}
+                            {group.hasComparableTotals ? (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                group.isMatched ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                              }`}>
+                                {group.isMatched ? '일치' : '불일치'}
                               </span>
-                            ) : <span className="text-gray-300">-</span>}
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              group.isMatched ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }`}>
-                              {group.isMatched ? '일치' : '불일치'}
-                            </span>
+                            ) : (
+                              <span
+                                className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"
+                                title="급여대장 또는 이체 자료가 없어 대사할 수 없습니다"
+                              >
+                                자료 없음
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )
