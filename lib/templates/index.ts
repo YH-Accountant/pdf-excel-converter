@@ -309,8 +309,8 @@ export const documentTemplates: Record<DocumentType, {
 {
   "isMultipleDocuments": true,
   "documents": [
-    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", "numberOfPeople": 8, "totalPayment": 24950330, "incomeTax": 873220, "localIncomeTax": 87280 } },
-    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-02", "paymentYearMonth": "2025-03", "numberOfPeople": 8, "totalPayment": 25417170, "incomeTax": 889560, "localIncomeTax": 88920 } }
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", "numberOfPeople": 8, "totalPayment": 24950330, "incomeTax": 873220, "localIncomeTax": null } },
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-02", "paymentYearMonth": "2025-03", "numberOfPeople": 8, "totalPayment": 25417170, "incomeTax": 889560, "localIncomeTax": null } }
   ]
 }
 
@@ -319,7 +319,6 @@ export const documentTemplates: Record<DocumentType, {
 
 [중요]
 - 원천징수영수증도 이 템플릿으로 처리합니다
-- 지방소득세는 소득세의 10%입니다
 - 여러 달이 묶여 있으면 절대 한 건으로 합치지 말고 달별로 나눌 것
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },
