@@ -21,7 +21,9 @@ import type { DocumentType } from '@/app/single/page'
 // 유형별 앵커. templates/index.ts의 "결정적 단서"를 코드로 옮긴 것이므로
 // 그쪽을 고치면 여기도 함께 검토해야 한다.
 export const TYPE_ANCHORS: Record<DocumentType, string[]> = {
-  contract: ['제1조', '제2조', '계약을 체결', '기명날인', '갑', '을', '(인)'],
+  // 한 글자 앵커('갑', '을')는 조사와 구분되지 않아 넣지 않는다.
+  // ("도착하였음을" 같은 평범한 문장이 계약서 단서로 잡힌다)
+  contract: ['제1조', '제2조', '계약을 체결', '계약금액', '기명날인', '위탁자', '수탁자', '(인)'],
   taxInvoice: ['세금계산서', '승인번호', '공급가액', '공급받는자'],
   tradingStatement: ['거래명세', '인수자', '인계자', '납품', '영수', '청구'],
   bankStatement: ['이체', '출금', '입금', '잔액', '거래내역'],

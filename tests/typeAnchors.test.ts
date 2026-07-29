@@ -83,6 +83,14 @@ test('판정이 실패해도 유형을 바꾸거나 버리지 않는다 — 경�
   assert.equal('correctedType' in r, false)
 })
 
+test('한 글자 앵커를 쓰지 않아 평범한 조사에 걸리지 않는다', () => {
+  // "도착하였음을"의 '을'이 계약서 단서로 잡히면 안 된다
+  const 물품확인서 = '물품 확인서 ... 상기 물품이 이상 없이 도착하였음을 확인합니다'
+  const r = checkTypeAnchors('contract', 물품확인서)
+  assert.equal(r.ok, false, '계약서 단서가 없어야 함')
+  assert.deepEqual(r.found, [])
+})
+
 test('자간을 벌린 제목도 단서로 인식한다 — 급 여 대 장', () => {
   // 한국 서식은 제목을 띄어 쓰는 일이 흔하고 OCR도 공백을 끼워 넣는다
   const r = checkTypeAnchors('payroll', '급 여 대 장   귀속연월 2025년 01월   기 본 급')
