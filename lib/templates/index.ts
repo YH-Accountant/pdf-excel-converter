@@ -114,9 +114,28 @@ export const documentTemplates: Record<DocumentType, {
    - 숫자만 (콤마 없이)
    - 예: 11000000
 
+[여러 건 처리 ★ 중요]
+승인번호나 작성일자가 여러 개인 경우(여러 건의 세금계산서가 한 파일에 묶인 경우)
+→ 반드시 isMultipleDocuments: true로 각 건을 별도 문서로 분리해서 반환
+→ ★ 여러 건의 금액을 절대 합산하지 말 것. 각 건의 금액을 그대로 담을 것
+
+응답 형식 - 여러 건:
+{
+  "isMultipleDocuments": true,
+  "documents": [
+    { "documentType": "taxInvoice", "fields": { "issueDate": "2025-10-02", "supplyValue": 1234566, "taxAmount": 123456, ... } },
+    { "documentType": "taxInvoice", "fields": { "issueDate": "2025-10-15", "supplyValue": 8641983, "taxAmount": 864198, ... } }
+  ]
+}
+
+응답 형식 - 단일 건:
+{ "supplier": "...", "issueDate": "2025-10-02", ... }
+
 [중요]
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시
-- 합계금액이 공급가액+세액과 일치하는지 확인할 것`
+- 합계금액이 공급가액+세액과 일치하는지 확인할 것
+- ★ 세액은 문서에 인쇄된 값을 그대로 읽을 것. 공급가액의 10%를 계산해 넣지 말 것
+  (원 단위 절사·영세율 등으로 정확히 10%가 아닌 경우가 있다)`
   },
 
   tradingStatement: {
