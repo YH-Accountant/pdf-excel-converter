@@ -48,11 +48,22 @@ export interface AnchorCheckResult {
   found: string[]
 }
 
+// 공백을 걷어낸다.
+// 한국 서식은 제목을 "급 여 대 장", "거 래 명 세 서"처럼 자간을 벌려 쓰는 일이 흔하고,
+// OCR도 글자 사이에 공백을 끼워 넣는다. 그대로 대조하면 정작 가장 확실한 단서인
+// 제목을 놓친다.
+//
+// 대신 "지급 여부" → "지급여부"처럼 붙으면서 없던 단서(급여)가 생길 수 있다.
+// 이 검증은 경고만 하고 유형을 바꾸지 않으므로, 단서를 과하게 찾는 쪽(검증이 느슨해짐)이
+// 멀쩡한 문서에 "확인 필요"를 띄우는 쪽보다 낫다고 보고 이 트레이드오프를 택했다.
+const stripSpaces = (s: string) => s.replace(/\s/g, '')
+
 // 원문에서 해당 유형의 앵커를 찾는다
 function findAnchors(documentType: DocumentType, sourceText: string): string[] {
   const anchors = TYPE_ANCHORS[documentType]
   if (!anchors) return []
-  return anchors.filter((a) => sourceText.includes(a))
+  const packed = stripSpaces(sourceText)
+  return anchors.filter((a) => packed.includes(stripSpaces(a)))
 }
 
 // 혼동쌍에서 상대 유형을 찾는다

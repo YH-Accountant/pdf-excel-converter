@@ -83,6 +83,14 @@ test('판정이 실패해도 유형을 바꾸거나 버리지 않는다 — 경�
   assert.equal('correctedType' in r, false)
 })
 
+test('자간을 벌린 제목도 단서로 인식한다 — 급 여 대 장', () => {
+  // 한국 서식은 제목을 띄어 쓰는 일이 흔하고 OCR도 공백을 끼워 넣는다
+  const r = checkTypeAnchors('payroll', '급 여 대 장   귀속연월 2025년 01월   기 본 급')
+  assert.equal(r.ok, true)
+  assert.ok(r.found.includes('급여'), '띄어쓴 제목에서 급여를 찾아야 함')
+  assert.ok(r.found.includes('기본급'), '띄어쓴 항목명도 찾아야 함')
+})
+
 test('모든 유형에 앵커가 정의되어 있다', () => {
   const types = Object.keys(TYPE_ANCHORS)
   assert.equal(types.length, 7)
