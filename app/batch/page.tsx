@@ -6,7 +6,13 @@ import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
 import { checkImageQuality, type QualityResult } from '@/lib/imageQuality'
-import { computeUpscaleFactor, exceedsPayloadBudget, PAYLOAD_FALLBACKS } from '@/lib/imagePayload'
+import {
+  base64ByteLength,
+  computeUpscaleFactor,
+  exceedsPayloadBudget,
+  MAX_PAYLOAD_BASE64_BYTES,
+  PAYLOAD_FALLBACKS,
+} from '@/lib/imagePayload'
 import { hasEnoughText } from '@/lib/textGate'
 import { computePdfRenderScale } from '@/lib/pdfRender'
 
@@ -83,33 +89,47 @@ export default function BatchPage() {
         viewport: viewport,
       }).promise
 
-      const base64 = canvas.toDataURL('image/png').split(',')[1]
-      images.push({ base64, mediaType: 'image/png' })
+      // PNG(무손실)로 뽑으면 스캔 노이즈가 압축되지 않아 페이지당 수 MB가 되고,
+      // 여러 장을 묶는 순간 요청 한도를 넘는다. OCR에는 JPEG로 충분하다.
+      const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1]
+      images.push({ base64, mediaType: 'image/jpeg' })
     }
 
     return images
   }
 
-  // Google Vision OCR 호출 (5장씩 분할 전송 → 4MB 한도 초과 방지)
+  // Google Vision OCR 호출.
+  // 장수가 아니라 실제 전송 크기로 묶는다. 페이지당 용량은 문서에 따라 수십 배 차이가 나므로
+  // "5장씩"처럼 장수로 나누면 큰 페이지가 몇 장만 모여도 요청 한도를 넘는다.
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
-    const BATCH_SIZE = 5
     const textParts: string[] = []
 
-    for (let i = 0; i < images.length; i += BATCH_SIZE) {
-      const batch = images.slice(i, i + BATCH_SIZE)
+    const send = async (batch: { base64: string; mediaType: string }[]) => {
       const response = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ images: batch, useDocumentMode: true }),
       })
-
       if (!response.ok) {
         throw new Error('OCR 처리 실패')
       }
-
       const data = await response.json()
       if (data.text) textParts.push(data.text)
     }
+
+    let batch: { base64: string; mediaType: string }[] = []
+    let batchBytes = 0
+    for (const image of images) {
+      const bytes = base64ByteLength(image.base64)
+      if (batch.length > 0 && batchBytes + bytes > MAX_PAYLOAD_BASE64_BYTES) {
+        await send(batch)
+        batch = []
+        batchBytes = 0
+      }
+      batch.push(image)
+      batchBytes += bytes
+    }
+    if (batch.length > 0) await send(batch)
 
     return textParts.join('\n\n')
   }
