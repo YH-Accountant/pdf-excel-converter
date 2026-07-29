@@ -5,7 +5,14 @@ import Link from 'next/link'
 import { DocumentType, ExtractedData } from '@/app/single/page'
 import BatchExcelDownload from '@/components/BatchExcelDownload'
 import * as pdfjsLib from 'pdfjs-dist'
-import { checkImageQuality } from '@/lib/imageQuality'
+import { checkImageQuality, type QualityResult } from '@/lib/imageQuality'
+import {
+  base64ByteLength,
+  computeUpscaleFactor,
+  exceedsPayloadBudget,
+  MAX_PAYLOAD_BASE64_BYTES,
+  PAYLOAD_FALLBACKS,
+} from '@/lib/imagePayload'
 import { hasEnoughText } from '@/lib/textGate'
 import { computePdfRenderScale } from '@/lib/pdfRender'
 
@@ -17,6 +24,8 @@ interface ProcessingFile {
   // 근거 검증에서 버려진 값 (원문에 없어 AI가 지어낸 것으로 판단된 금액).
   // 표시하지 않으면 사용자는 빈칸의 이유를 알 수 없다.
   groundingWarnings?: string[]
+  // 저화질 경고. 처리는 했지만 값을 그대로 믿기 어렵다는 신호
+  qualityWarning?: string
 }
 
 export default function BatchPage() {
@@ -80,33 +89,47 @@ export default function BatchPage() {
         viewport: viewport,
       }).promise
 
-      const base64 = canvas.toDataURL('image/png').split(',')[1]
-      images.push({ base64, mediaType: 'image/png' })
+      // PNG(무손실)로 뽑으면 스캔 노이즈가 압축되지 않아 페이지당 수 MB가 되고,
+      // 여러 장을 묶는 순간 요청 한도를 넘는다. OCR에는 JPEG로 충분하다.
+      const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1]
+      images.push({ base64, mediaType: 'image/jpeg' })
     }
 
     return images
   }
 
-  // Google Vision OCR 호출 (5장씩 분할 전송 → 4MB 한도 초과 방지)
+  // Google Cloud Vision OCR 호출. (Claude Vision과 다른 서비스다 — 이쪽은 텍스트만 뽑는다)
+  // 장수가 아니라 실제 전송 크기로 묶는다. 페이지당 용량은 문서에 따라 수십 배 차이가 나므로
+  // "5장씩"처럼 장수로 나누면 큰 페이지가 몇 장만 모여도 요청 한도를 넘는다.
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
-    const BATCH_SIZE = 5
     const textParts: string[] = []
 
-    for (let i = 0; i < images.length; i += BATCH_SIZE) {
-      const batch = images.slice(i, i + BATCH_SIZE)
+    const send = async (batch: { base64: string; mediaType: string }[]) => {
       const response = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ images: batch, useDocumentMode: true }),
       })
-
       if (!response.ok) {
         throw new Error('OCR 처리 실패')
       }
-
       const data = await response.json()
       if (data.text) textParts.push(data.text)
     }
+
+    let batch: { base64: string; mediaType: string }[] = []
+    let batchBytes = 0
+    for (const image of images) {
+      const bytes = base64ByteLength(image.base64)
+      if (batch.length > 0 && batchBytes + bytes > MAX_PAYLOAD_BASE64_BYTES) {
+        await send(batch)
+        batch = []
+        batchBytes = 0
+      }
+      batch.push(image)
+      batchBytes += bytes
+    }
+    if (batch.length > 0) await send(batch)
 
     return textParts.join('\n\n')
   }
@@ -147,8 +170,42 @@ export default function BatchPage() {
     }
   }
 
-  // 이미지 파일을 base64로 변환 (해상도 + 선명도 기준 저화질 판단 후 필요 시 canvas 2배 확대)
-  const convertImageToBase64 = async (imageFile: File): Promise<{ base64: string; mediaType: string }> => {
+  // 텍스트를 이미 확보한 경우, 추출 API에는 파일 "이름"만 필요하다.
+  // 원본 바이트를 그대로 실어 보내면(스캔본 PNG는 수 MB) 쓰이지도 않은 채
+  // 요청 한도를 넘겨 413이 난다. 서버는 text/plain 파일의 내용을 건너뛴다.
+  const createNameOnlyMarker = (fileName: string) =>
+    new File([], fileName, { type: 'text/plain' })
+
+  // 이미지를 지정한 배율·품질로 다시 인코딩한다.
+  const encodeImage = (img: HTMLImageElement, factor: number, quality: number) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(img.width * factor))
+    canvas.height = Math.max(1, Math.round(img.height * factor))
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', quality).split(',')[1]
+  }
+
+  // 전송 예산 안에 들어오도록 단계적으로 품질·해상도를 낮춘다.
+  // 노이즈가 있는 스캔본은 PNG가 거의 압축되지 않아 그대로 보내면 413이 난다.
+  const fitToPayloadBudget = (img: HTMLImageElement, baseFactor: number) => {
+    for (const step of PAYLOAD_FALLBACKS) {
+      const base64 = encodeImage(img, baseFactor * step.scale, step.quality)
+      if (!exceedsPayloadBudget(base64)) {
+        return { base64, mediaType: 'image/jpeg' }
+      }
+    }
+    // 마지막 단계까지 넘으면 가장 작은 설정으로라도 보낸다 (서버가 413을 돌려주면 그때 실패 처리)
+    const last = PAYLOAD_FALLBACKS[PAYLOAD_FALLBACKS.length - 1]
+    console.warn('전송 예산을 맞추지 못했습니다 — 최소 설정으로 전송합니다')
+    return { base64: encodeImage(img, baseFactor * last.scale, last.quality), mediaType: 'image/jpeg' }
+  }
+
+  // 이미지 파일을 base64로 변환
+  //  - 저화질이면 확대해서 OCR 인식률을 높이고
+  //  - 어느 경우든 전송 크기가 서버 한도를 넘지 않도록 맞춘다
+  const convertImageToBase64 = async (
+    imageFile: File
+  ): Promise<{ base64: string; mediaType: string; quality: QualityResult }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
@@ -157,17 +214,25 @@ export default function BatchPage() {
         const img = new Image()
         img.onload = () => {
           const quality = checkImageQuality(img)
+
           if (quality.isLow) {
-            console.log(`저화질 이미지 감지 [${quality.reason}] ${quality.detail} → canvas 2배 확대`)
-            const canvas = document.createElement('canvas')
-            canvas.width = img.width * 2
-            canvas.height = img.height * 2
-            canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-            resolve({ base64: canvas.toDataURL('image/png').split(',')[1], mediaType: 'image/png' })
-          } else {
-            console.log(`고화질 이미지 ${quality.detail} → 원본 그대로 OCR`)
-            resolve({ base64: originalBase64, mediaType: imageFile.type })
+            const factor = computeUpscaleFactor(img.width, img.height)
+            console.log(
+              `저화질 이미지 감지 [${quality.reason}] ${quality.detail} → canvas ${factor.toFixed(2)}배 확대`
+            )
+            resolve({ ...fitToPayloadBudget(img, factor), quality })
+            return
           }
+
+          // 고화질이어도 무손실 스캔본은 용량이 커서 그대로 보내면 한도를 넘을 수 있다
+          if (exceedsPayloadBudget(originalBase64)) {
+            console.log(`고화질 이미지 ${quality.detail} → 전송 크기 초과, 재인코딩`)
+            resolve({ ...fitToPayloadBudget(img, 1), quality })
+            return
+          }
+
+          console.log(`고화질 이미지 ${quality.detail} → 원본 그대로 OCR`)
+          resolve({ base64: originalBase64, mediaType: imageFile.type, quality })
         }
         img.onerror = reject
         img.src = dataUrl
@@ -176,6 +241,22 @@ export default function BatchPage() {
       reader.readAsDataURL(imageFile)
     })
   }
+
+  // 저화질이면 사용자에게 보여줄 경고 문구를 만든다.
+  // 화질 정보는 지금까지 콘솔에만 남아 사용자가 결과를 얼마나 믿을지 판단할 수 없었다.
+  const describeLowQuality = (quality: QualityResult): string | undefined =>
+    quality.isLow
+      ? `저화질 이미지 (${quality.detail}) — 값이 누락되거나 잘못 읽힐 수 있으니 원본과 대조하세요`
+      : undefined
+
+  // 추출된 값이 하나라도 있는지 확인한다.
+  // 전부 비어 있는데 '완료'로 표시하면 사용자는 원래 값이 없는 문서로 오해한다.
+  const hasAnyExtractedValue = (results: ExtractedData[]): boolean =>
+    results.some((r) =>
+      Object.values(r.fields || {}).some(
+        (v) => v !== null && v !== undefined && String(v).trim() !== ''
+      )
+    )
 
   // 다중 문서 응답을 단일 문서 배열로 변환
   const processApiResponse = (data: any, fileName: string): ExtractedData[] => {
@@ -199,8 +280,9 @@ export default function BatchPage() {
 
   const processFile = async (
     fileItem: ProcessingFile
-  ): Promise<{ results: ExtractedData[]; groundingWarnings?: string[] }> => {
+  ): Promise<{ results: ExtractedData[]; groundingWarnings?: string[]; qualityWarning?: string }> => {
     const formData = new FormData()
+    let qualityWarning: string | undefined
 
     // PDF 처리: 텍스트 추출 시도 -> OCR -> 이미지 변환
     if (fileItem.file.type === 'application/pdf') {
@@ -217,11 +299,11 @@ export default function BatchPage() {
         // 텍스트 기반 추출
         console.log('✓ 텍스트 추출 성공!')
         formData.append('pdfText', text)
-        formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+        formData.append('file0', createNameOnlyMarker(fileItem.file.name))
         formData.append('fileCount', '1')
       } else {
         // 2. 스캔 PDF - Google Vision OCR 시도
-        console.log('✗ 스캔 PDF 감지! Google Vision OCR 사용')
+        console.log('✗ 스캔 PDF 감지! Google OCR 사용')
         const images = await convertPdfToBase64Images(fileItem.file)
         console.log(`${images.length}개 페이지 이미지 변환 완료`)
 
@@ -231,7 +313,7 @@ export default function BatchPage() {
         if (hasEnoughText(ocrText)) {
           // OCR 텍스트로 추출
           formData.append('pdfText', ocrText)
-          formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+          formData.append('file0', createNameOnlyMarker(fileItem.file.name))
           formData.append('fileCount', '1')
         } else {
           // 3. Claude Vision 사용 (이미지 직접 전송)
@@ -251,10 +333,11 @@ export default function BatchPage() {
         }
       }
     } else if (fileItem.file.type.startsWith('image/')) {
-      // 이미지 파일: Google Vision OCR 사용
+      // 이미지 파일: Google OCR 사용
       console.log(`=== 이미지 처리: ${fileItem.file.name} ===`)
 
       const imageData = await convertImageToBase64(fileItem.file)
+      qualityWarning = describeLowQuality(imageData.quality)
       console.log('이미지 변환 완료, OCR 시도...')
 
       const ocrText = await callGoogleOcr([imageData])
@@ -263,11 +346,21 @@ export default function BatchPage() {
       if (hasEnoughText(ocrText)) {
         // OCR 텍스트로 추출
         formData.append('pdfText', ocrText)
-        formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+        formData.append('file0', createNameOnlyMarker(fileItem.file.name))
         formData.append('fileCount', '1')
+      } else if (imageData.quality.isLow) {
+        // OCR이 실패했고 원인이 화질이면 Claude Vision으로 넘기지 않는다.
+        // Google OCR이 포기한 이미지는 Claude Vision도 읽지 못하는 것을 확인했고
+        // (선명도 112.8짜리 문서에서 두 경로 모두 값을 얻지 못함),
+        // Vision은 픽셀 수에 비례해 비용이 들기 때문에 넘기면 비용만 발생한다.
+        console.log('OCR 실패 + 저화질 → 처리 중단 (Claude Vision 호출 안 함)')
+        throw new Error(
+          `화질이 낮아 인식하지 못했습니다 (${imageData.quality.detail}). 더 선명하게 다시 스캔해주세요.`
+        )
       } else {
-        // OCR 텍스트가 부족하면 Claude Vision 사용 (확대본 전송)
-        console.log('OCR 텍스트 부족, Claude Vision 사용')
+        // 화질은 정상인데 OCR이 실패한 경우 — 원인은 알 수 없지만(손글씨·특이 레이아웃 등)
+        // 화질 문제는 아니므로 Claude Vision을 시도해볼 여지가 있다
+        console.log('OCR 텍스트 부족(화질은 정상), Claude Vision 사용')
         const binary = atob(imageData.base64)
         const array = new Uint8Array(binary.length)
         for (let j = 0; j < binary.length; j++) array[j] = binary.charCodeAt(j)
@@ -292,12 +385,18 @@ export default function BatchPage() {
     }
 
     const data = await response.json()
+    const results = processApiResponse(data, fileItem.file.name)
 
-    // 다중 문서 응답 처리
-    return {
-      results: processApiResponse(data, fileItem.file.name),
-      groundingWarnings: data.groundingWarnings,
+    // 값이 하나도 없으면 성공이 아니다 — 조용히 빈 행이 엑셀에 들어가는 것을 막는다
+    if (!hasAnyExtractedValue(results)) {
+      throw new Error(
+        qualityWarning
+          ? '추출된 값이 없습니다 — 화질이 낮아 인식하지 못한 것으로 보입니다. 다시 스캔해주세요.'
+          : '추출된 값이 없습니다 — 원본을 확인해주세요.'
+      )
     }
+
+    return { results, groundingWarnings: data.groundingWarnings, qualityWarning }
   }
 
   const startBatchProcess = async () => {
@@ -317,11 +416,11 @@ export default function BatchPage() {
       )
 
       try {
-        const { results, groundingWarnings } = await processFile(fileItem)
+        const { results, groundingWarnings, qualityWarning } = await processFile(fileItem)
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === fileIndex
-              ? { ...f, status: 'completed', result: results, groundingWarnings }
+              ? { ...f, status: 'completed', result: results, groundingWarnings, qualityWarning }
               : f
           )
         )
@@ -515,6 +614,14 @@ export default function BatchPage() {
                       </button>
                     )}
                     </div>
+
+                    {/* 화질 경고 — 처리는 됐지만 값을 그대로 믿기 어렵다는 신호.
+                        지금까지 콘솔에만 남아 사용자가 판단할 근거가 없었다 */}
+                    {fileItem.qualityWarning && (
+                      <p className="mt-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg p-2">
+                        {fileItem.qualityWarning}
+                      </p>
+                    )}
 
                     {/* 근거 검증 경고 — 빈칸의 이유를 반드시 남긴다.
                         값이 이유 없이 사라지면 사용자는 원래 없던 값으로 오해한다 */}
