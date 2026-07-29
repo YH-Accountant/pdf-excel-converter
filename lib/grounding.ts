@@ -26,6 +26,19 @@ export const GROUNDED_AMOUNT_FIELDS: Partial<Record<DocumentType, string[]>> = {
   taxInvoice: ['supplyValue', 'taxAmount'],
 }
 
+// 완화 검증 대상 — 원문에 없어도 값은 유지하고 경고만 남긴다.
+//
+// 합계금액은 인쇄되어 있지 않은 서식이 있어 AI가 계산하는 것이 정상인 경우가 있다.
+// 그래서 버리면 안 된다. 다만 인쇄된 합계가 공급가액+세액과 어긋날 때
+// AI가 계산상 맞는 값으로 바꿔치기하는 것이 관측됐다.
+//   예) 문서에 21,708,000이 인쇄되어 있는데 21,780,000으로 반환
+// 증빙에 적힌 값이 곧 사실이고, 계산이 어긋나는 것 자체가 확인해야 할 사안이므로
+// 조용히 보정되면 원본 오류를 발견할 기회를 잃는다.
+// 값은 그대로 두되 "원문에 없다"는 사실을 반드시 알린다.
+export const SOFT_GROUNDED_FIELDS: Partial<Record<DocumentType, string[]>> = {
+  taxInvoice: ['totalAmount'],
+}
+
 // 이 금액 미만은 검증하지 않는다. 짧은 숫자(인원수·페이지 번호 등)는
 // 원문 어딘가에 우연히 나타날 확률이 높아 검증이 의미를 갖지 못한다.
 const MIN_GROUNDABLE_AMOUNT = 1000
@@ -59,34 +72,49 @@ export interface GroundingResult {
   fields: Record<string, any>
   // 근거를 찾지 못해 버린 필드와 그 값 (경고 표시·로그용)
   dropped: { field: string; value: string }[]
+  // 근거를 찾지 못했지만 값은 유지한 필드 (완화 검증 대상)
+  unverified: { field: string; value: string }[]
 }
 
 // AI가 추출한 필드 중 근거 검증 대상을 원문과 대조한다.
-// 원문에 없는 값은 null로 되돌린다 — 없는 값이 틀린 값보다 낫다.
+// 엄격 대상은 원문에 없으면 null로 되돌리고(없는 값이 틀린 값보다 낫다),
+// 완화 대상은 값을 유지한 채 사실만 알린다.
 export function groundAmountFields(
   documentType: DocumentType,
   fields: Record<string, any>,
   sourceText: string
 ): GroundingResult {
-  const targets = GROUNDED_AMOUNT_FIELDS[documentType]
-  if (!targets || !sourceText) {
-    return { fields, dropped: [] }
+  const strict = GROUNDED_AMOUNT_FIELDS[documentType]
+  const soft = SOFT_GROUNDED_FIELDS[documentType]
+  if ((!strict && !soft) || !sourceText) {
+    return { fields, dropped: [], unverified: [] }
   }
 
   const tokens = extractNumberTokens(sourceText)
   const dropped: { field: string; value: string }[] = []
+  const unverified: { field: string; value: string }[] = []
   const result = { ...fields }
 
-  for (const field of targets) {
+  // 원문에 근거가 있는지 확인한다. 대조 불가(비금액·소액)면 null을 돌려준다.
+  const missingFrom = (field: string): string | null => {
     const normalized = normalizeAmount(result[field])
-    if (normalized === null) continue
-    if (parseInt(normalized, 10) < MIN_GROUNDABLE_AMOUNT) continue
+    if (normalized === null) return null
+    if (parseInt(normalized, 10) < MIN_GROUNDABLE_AMOUNT) return null
+    return tokens.has(normalized) ? null : normalized
+  }
 
-    if (!tokens.has(normalized)) {
-      dropped.push({ field, value: normalized })
+  for (const field of strict || []) {
+    const value = missingFrom(field)
+    if (value !== null) {
+      dropped.push({ field, value })
       result[field] = null
     }
   }
 
-  return { fields: result, dropped }
+  for (const field of soft || []) {
+    const value = missingFrom(field)
+    if (value !== null) unverified.push({ field, value })
+  }
+
+  return { fields: result, dropped, unverified }
 }

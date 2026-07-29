@@ -27,6 +27,9 @@ interface ProcessingFile {
   groundingWarnings?: string[]
   // 저화질 경고. 처리는 했지만 값을 그대로 믿기 어렵다는 신호
   qualityWarning?: string
+  // 정합성 검산 경고 (공급가액 + 세액 = 합계가 어긋남).
+  // 값은 고치지 않고 어긋난 사실만 알린다
+  consistencyWarnings?: string[]
   // 앵커 검증에서 나온 "유형 확인 필요" 사유.
   // 유형을 바꾸지는 않고, 사용자가 판단할 근거만 보여준다
   typeWarnings?: string[]
@@ -291,6 +294,7 @@ export default function BatchPage() {
     groundingWarnings?: string[]
     qualityWarning?: string
     typeWarnings?: string[]
+    consistencyWarnings?: string[]
   }> => {
     const formData = new FormData()
     let qualityWarning: string | undefined
@@ -417,6 +421,7 @@ export default function BatchPage() {
       groundingWarnings: data.groundingWarnings,
       qualityWarning,
       typeWarnings: data.typeWarnings,
+      consistencyWarnings: data.consistencyWarnings,
     }
   }
 
@@ -433,7 +438,7 @@ export default function BatchPage() {
     )
 
     try {
-      const { results, groundingWarnings, qualityWarning, typeWarnings } = await processFile({
+      const { results, groundingWarnings, qualityWarning, consistencyWarnings } = await processFile({
         ...target,
         overrideType: documentType,
       })
@@ -448,6 +453,7 @@ export default function BatchPage() {
                 qualityWarning,
                 // 사용자가 직접 고른 유형이므로 유형 경고는 더 이상 띄우지 않는다
                 typeWarnings: undefined,
+                consistencyWarnings,
                 error: undefined,
               }
             : f
@@ -479,7 +485,7 @@ export default function BatchPage() {
       )
 
       try {
-        const { results, groundingWarnings, qualityWarning, typeWarnings } =
+        const { results, groundingWarnings, qualityWarning, typeWarnings, consistencyWarnings } =
           await processFile(fileItem)
         setFiles((prev) =>
           prev.map((f, idx) =>
@@ -491,6 +497,7 @@ export default function BatchPage() {
                   groundingWarnings,
                   qualityWarning,
                   typeWarnings,
+                  consistencyWarnings,
                 }
               : f
           )
@@ -734,6 +741,21 @@ export default function BatchPage() {
                       <p className="mt-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg p-2">
                         {fileItem.qualityWarning}
                       </p>
+                    )}
+
+                    {/* 정합성 검산 경고 — 문서 안의 등식이 어긋난 경우.
+                        어느 값이 틀렸는지는 코드가 단정할 수 없으므로 고치지 않고 알리기만 한다 */}
+                    {fileItem.consistencyWarnings && fileItem.consistencyWarnings.length > 0 && (
+                      <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg">
+                        <p className="text-xs font-medium text-rose-900">
+                          금액이 서로 맞지 않습니다 — 원본과 대조하세요
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {fileItem.consistencyWarnings.map((w, i) => (
+                            <li key={i} className="text-xs text-rose-800">· {w}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
 
                     {/* 근거 검증 경고 — 빈칸의 이유를 반드시 남긴다.
