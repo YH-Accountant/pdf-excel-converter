@@ -114,9 +114,28 @@ export const documentTemplates: Record<DocumentType, {
    - 숫자만 (콤마 없이)
    - 예: 11000000
 
+[여러 건 처리 ★ 중요]
+승인번호나 작성일자가 여러 개인 경우(여러 건의 세금계산서가 한 파일에 묶인 경우)
+→ 반드시 isMultipleDocuments: true로 각 건을 별도 문서로 분리해서 반환
+→ ★ 여러 건의 금액을 절대 합산하지 말 것. 각 건의 금액을 그대로 담을 것
+
+응답 형식 - 여러 건:
+{
+  "isMultipleDocuments": true,
+  "documents": [
+    { "documentType": "taxInvoice", "fields": { "issueDate": "2025-10-02", "supplyValue": 1234566, "taxAmount": 123456, ... } },
+    { "documentType": "taxInvoice", "fields": { "issueDate": "2025-10-15", "supplyValue": 8641983, "taxAmount": 864198, ... } }
+  ]
+}
+
+응답 형식 - 단일 건:
+{ "supplier": "...", "issueDate": "2025-10-02", ... }
+
 [중요]
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시
-- 합계금액이 공급가액+세액과 일치하는지 확인할 것`
+- 합계금액이 공급가액+세액과 일치하는지 확인할 것
+- ★ 세액은 문서에 인쇄된 값을 그대로 읽을 것. 공급가액의 10%를 계산해 넣지 말 것
+  (원 단위 절사·영세율 등으로 정확히 10%가 아닌 경우가 있다)`
   },
 
   tradingStatement: {
@@ -309,8 +328,8 @@ export const documentTemplates: Record<DocumentType, {
 {
   "isMultipleDocuments": true,
   "documents": [
-    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", "numberOfPeople": 8, "totalPayment": 24950330, "incomeTax": 873220, "localIncomeTax": 87280 } },
-    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-02", "paymentYearMonth": "2025-03", "numberOfPeople": 8, "totalPayment": 25417170, "incomeTax": 889560, "localIncomeTax": 88920 } }
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-01", "paymentYearMonth": "2025-02", "numberOfPeople": 8, "totalPayment": 24950330, "incomeTax": 873220, "localIncomeTax": null } },
+    { "documentType": "withholdingTax", "fields": { "attributionYearMonth": "2025-02", "paymentYearMonth": "2025-03", "numberOfPeople": 8, "totalPayment": 25417170, "incomeTax": 889560, "localIncomeTax": null } }
   ]
 }
 
@@ -319,7 +338,6 @@ export const documentTemplates: Record<DocumentType, {
 
 [중요]
 - 원천징수영수증도 이 템플릿으로 처리합니다
-- 지방소득세는 소득세의 10%입니다
 - 여러 달이 묶여 있으면 절대 한 건으로 합치지 말고 달별로 나눌 것
 - 문서에서 명확히 확인되지 않는 정보는 null로 표시`
   },

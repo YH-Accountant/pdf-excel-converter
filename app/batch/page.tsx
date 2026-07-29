@@ -14,6 +14,9 @@ interface ProcessingFile {
   status: 'pending' | 'processing' | 'completed' | 'error'
   result?: ExtractedData[]  // 다중 문서 지원을 위해 배열로 변경
   error?: string
+  // 근거 검증에서 버려진 값 (원문에 없어 AI가 지어낸 것으로 판단된 금액).
+  // 표시하지 않으면 사용자는 빈칸의 이유를 알 수 없다.
+  groundingWarnings?: string[]
 }
 
 export default function BatchPage() {
@@ -194,7 +197,9 @@ export default function BatchPage() {
     }]
   }
 
-  const processFile = async (fileItem: ProcessingFile): Promise<ExtractedData[]> => {
+  const processFile = async (
+    fileItem: ProcessingFile
+  ): Promise<{ results: ExtractedData[]; groundingWarnings?: string[] }> => {
     const formData = new FormData()
 
     // PDF 처리: 텍스트 추출 시도 -> OCR -> 이미지 변환
@@ -289,7 +294,10 @@ export default function BatchPage() {
     const data = await response.json()
 
     // 다중 문서 응답 처리
-    return processApiResponse(data, fileItem.file.name)
+    return {
+      results: processApiResponse(data, fileItem.file.name),
+      groundingWarnings: data.groundingWarnings,
+    }
   }
 
   const startBatchProcess = async () => {
@@ -309,10 +317,12 @@ export default function BatchPage() {
       )
 
       try {
-        const result = await processFile(fileItem)
+        const { results, groundingWarnings } = await processFile(fileItem)
         setFiles((prev) =>
           prev.map((f, idx) =>
-            idx === fileIndex ? { ...f, status: 'completed', result } : f
+            idx === fileIndex
+              ? { ...f, status: 'completed', result: results, groundingWarnings }
+              : f
           )
         )
       } catch (error) {
@@ -457,12 +467,13 @@ export default function BatchPage() {
                 {files.map((fileItem, index) => (
                   <div
                     key={index}
-                    className={`flex items-center justify-between p-3 rounded-lg text-sm
+                    className={`p-3 rounded-lg text-sm
                       ${fileItem.status === 'pending' ? 'bg-gray-50' : ''}
                       ${fileItem.status === 'processing' ? 'bg-blue-50 border border-blue-200' : ''}
                       ${fileItem.status === 'completed' ? 'bg-green-50' : ''}
                       ${fileItem.status === 'error' ? 'bg-red-50' : ''}`}
                   >
+                    <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {/* 상태 아이콘 */}
                       {fileItem.status === 'pending' && (
@@ -502,6 +513,22 @@ export default function BatchPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
+                    )}
+                    </div>
+
+                    {/* 근거 검증 경고 — 빈칸의 이유를 반드시 남긴다.
+                        값이 이유 없이 사라지면 사용자는 원래 없던 값으로 오해한다 */}
+                    {fileItem.groundingWarnings && fileItem.groundingWarnings.length > 0 && (
+                      <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-xs font-medium text-amber-900">
+                          원문에 근거가 없어 제외한 값이 {fileItem.groundingWarnings.length}건 있습니다 — 해당 칸은 비어 있습니다
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {fileItem.groundingWarnings.map((w, i) => (
+                            <li key={i} className="text-xs text-amber-800">· {w}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 ))}

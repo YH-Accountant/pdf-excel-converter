@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { detectDocumentType, detectDocumentTypeFromText, detectMultipleDocumentTypesFromText, extractFromMultipleImages, extractFromText, extractMultipleDocumentsFromText } from '@/lib/claude'
 import { DocumentType } from '@/app/single/page'
 import { validateAndFixContractAmount } from '@/lib/koreanAmount'
+import { groundAmountFields } from '@/lib/grounding'
 
 // 금액 필드 검증 및 수정 (계약서, 견적서)
 function postProcessFields(documentType: DocumentType, fields: Record<string, any>): Record<string, any> {
@@ -28,6 +29,24 @@ function postProcessFields(documentType: DocumentType, fields: Record<string, an
   return fields
 }
 
+// 근거 검증: AI가 반환한 금액이 원문에 실제로 있는지 대조하고,
+// 없는 값은 null로 버린 뒤 경고 문구를 모아 반환한다 (lib/grounding.ts)
+function applyGrounding(
+  documentType: DocumentType,
+  fields: Record<string, any>,
+  sourceText: string | undefined,
+  warnings: string[]
+): Record<string, any> {
+  if (!sourceText) return fields
+  const { fields: grounded, dropped } = groundAmountFields(documentType, fields, sourceText)
+  for (const { field, value } of dropped) {
+    const message = `${documentType}.${field}: 추출값 ${value}이(가) 원문에 없어 제외했습니다 (AI 생성 의심)`
+    console.warn(`[근거 검증] ${message}`)
+    warnings.push(message)
+  }
+  return grounded
+}
+
 // 같은 유형의 문서가 한 파일에 여러 건 들어있는 경우(여러 달치 이체확인증·원천징수신고서 등),
 // AI는 템플릿 지시에 따라 { isMultipleDocuments: true, documents: [...] } 형태로 반환한다.
 // 이 응답은 단일 문서의 fields 자리에 담겨 오므로, 소비자(batch/payroll)가 읽는 최상위로 승격한다.
@@ -35,25 +54,32 @@ function postProcessFields(documentType: DocumentType, fields: Record<string, an
 function buildExtractionResponse(
   documentType: DocumentType,
   rawFields: Record<string, any>,
-  extractionMethod: string
+  extractionMethod: string,
+  sourceText?: string
 ) {
+  const warnings: string[] = []
+
   if (rawFields?.isMultipleDocuments && Array.isArray(rawFields.documents)) {
     const documents = rawFields.documents.map((doc: any) => {
       const type = (doc?.documentType || documentType) as DocumentType
-      return { documentType: type, fields: postProcessFields(type, doc?.fields || {}) }
+      const grounded = applyGrounding(type, doc?.fields || {}, sourceText, warnings)
+      return { documentType: type, fields: postProcessFields(type, grounded) }
     })
     console.log(`=== 동일 유형 다중 문서 승격: ${documentType} ${documents.length}건 ===`)
     return NextResponse.json({
       isMultipleDocuments: true,
       documents,
       extractionMethod: `${extractionMethod}-multi`,
+      ...(warnings.length > 0 && { groundingWarnings: warnings }),
     })
   }
 
+  const grounded = applyGrounding(documentType, rawFields, sourceText, warnings)
   return NextResponse.json({
     documentType,
-    fields: postProcessFields(documentType, rawFields),
+    fields: postProcessFields(documentType, grounded),
     extractionMethod,
+    ...(warnings.length > 0 && { groundingWarnings: warnings }),
   })
 }
 
@@ -95,7 +121,7 @@ export async function POST(request: NextRequest) {
       // 사용자가 문서 유형을 지정한 경우: 단일 문서 추출
       if (documentTypeParam) {
         const rawFields = await extractFromText(pdfText, documentTypeParam)
-        return buildExtractionResponse(documentTypeParam, rawFields, 'text')
+        return buildExtractionResponse(documentTypeParam, rawFields, 'text', pdfText)
       }
 
       // 문서 유형 미지정: 다중 문서 유형 감지 시도
@@ -109,23 +135,28 @@ export async function POST(request: NextRequest) {
         console.log('=== 복합 증빙 PDF - 다중 추출 모드 ===')
         const multipleResults = await extractMultipleDocumentsFromText(pdfText, detectedTypes)
 
-        // 후처리
-        const processedResults = multipleResults.map(result => ({
-          documentType: result.documentType,
-          fields: postProcessFields(result.documentType, result.fields),
-        }))
+        // 후처리 (근거 검증 → 금액 검증)
+        const warnings: string[] = []
+        const processedResults = multipleResults.map(result => {
+          const grounded = applyGrounding(result.documentType, result.fields, pdfText, warnings)
+          return {
+            documentType: result.documentType,
+            fields: postProcessFields(result.documentType, grounded),
+          }
+        })
 
         return NextResponse.json({
           isMultipleDocuments: true,
           documents: processedResults,
           extractionMethod: 'text-multi',
+          ...(warnings.length > 0 && { groundingWarnings: warnings }),
         })
       }
 
       // 단일 문서 유형만 감지된 경우 (같은 유형이 여러 건이면 buildExtractionResponse가 분리)
       const documentType = detectedTypes[0] || await detectDocumentTypeFromText(pdfText)
       const rawFields = await extractFromText(pdfText, documentType)
-      return buildExtractionResponse(documentType, rawFields, 'text')
+      return buildExtractionResponse(documentType, rawFields, 'text', pdfText)
     }
 
     // 이미지 기반 추출 (fallback)
