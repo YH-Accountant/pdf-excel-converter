@@ -40,10 +40,22 @@ function applyGrounding(
   warnings: string[]
 ): Record<string, any> {
   if (!sourceText) return fields
-  const { fields: grounded, dropped } = groundAmountFields(documentType, fields, sourceText)
+  const { fields: grounded, dropped, unverified } = groundAmountFields(
+    documentType,
+    fields,
+    sourceText
+  )
   for (const { field, value } of dropped) {
     const message = `${documentType}.${field}: 추출값 ${value}이(가) 원문에 없어 제외했습니다 (AI 생성 의심)`
     console.warn(`[근거 검증] ${message}`)
+    warnings.push(message)
+  }
+  // 값은 유지하되 근거가 없다는 사실은 알린다.
+  // 문서에 인쇄된 합계를 AI가 계산상 맞는 값으로 바꿔치기하는 경우가 있어,
+  // 조용히 넘어가면 원본의 오류를 발견할 수 없다.
+  for (const { field, value } of unverified) {
+    const message = `${documentType}.${field}: ${value}이(가) 원문에 인쇄되어 있지 않습니다 — 문서에 적힌 값과 다를 수 있으니 원본을 확인하세요`
+    console.warn(`[근거 검증·완화] ${message}`)
     warnings.push(message)
   }
   return grounded

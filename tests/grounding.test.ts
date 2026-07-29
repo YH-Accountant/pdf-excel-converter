@@ -95,16 +95,39 @@ test('null·비금액 값은 검증을 건너뛴다', () => {
   assert.equal(dropped.length, 0)
 })
 
-test('세금계산서: 공급가액·세액은 검증 대상, 합계금액은 계산 허용이라 제외', () => {
+test('세금계산서: 공급가액·세액은 버리고, 합계금액은 유지하되 경고만 남긴다', () => {
   assert.deepEqual(GROUNDED_AMOUNT_FIELDS.taxInvoice, ['supplyValue', 'taxAmount'])
-  const { fields, dropped } = groundAmountFields(
+  const { fields, dropped, unverified } = groundAmountFields(
     'taxInvoice',
     { supplyValue: 10000000, taxAmount: 1000000, totalAmount: 11000000 },
     '공급가액 10,000,000 세액 1,000,000' // 합계는 원문에 없음
   )
   assert.equal(fields.supplyValue, 10000000)
-  assert.equal(fields.totalAmount, 11000000) // 원문에 없어도 유지
+  assert.equal(fields.totalAmount, 11000000, '합계는 버리지 않는다')
   assert.equal(dropped.length, 0)
+  assert.deepEqual(unverified, [{ field: 'totalAmount', value: '11000000' }])
+})
+
+test('★ 인쇄된 합계를 AI가 계산값으로 바꿔치기하면 잡아낸다', () => {
+  // 문서에는 21,708,000이 인쇄되어 있는데 AI가 공급가액+세액 = 21,780,000으로 반환한 상황.
+  // 증빙에 적힌 값이 사실이므로, 조용히 보정되면 원본 오류를 발견할 수 없다.
+  const 원문 = '공급가액 19,800,000 세액 1,980,000 합계금액 21,708,000'
+  const { fields, unverified } = groundAmountFields(
+    'taxInvoice',
+    { supplyValue: 19800000, taxAmount: 1980000, totalAmount: 21780000 },
+    원문
+  )
+  assert.equal(fields.totalAmount, 21780000, '값 자체는 버리지 않는다')
+  assert.deepEqual(unverified, [{ field: 'totalAmount', value: '21780000' }])
+})
+
+test('인쇄된 합계를 그대로 읽었으면 경고하지 않는다', () => {
+  const { unverified } = groundAmountFields(
+    'taxInvoice',
+    { supplyValue: 19800000, taxAmount: 1980000, totalAmount: 21708000 },
+    '공급가액 19,800,000 세액 1,980,000 합계금액 21,708,000'
+  )
+  assert.equal(unverified.length, 0)
 })
 
 test('토큰 단위 대조: 인접한 숫자가 이어 붙어 우연히 통과하지 않는다', () => {
