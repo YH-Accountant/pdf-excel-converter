@@ -3,6 +3,7 @@ import { detectDocumentType, detectDocumentTypeFromText, detectMultipleDocumentT
 import { DocumentType } from '@/app/single/page'
 import { validateAndFixContractAmount } from '@/lib/koreanAmount'
 import { groundAmountFields } from '@/lib/grounding'
+import { checkTypeAnchors } from '@/lib/typeAnchors'
 
 // 금액 필드 검증 및 수정 (계약서, 견적서)
 function postProcessFields(documentType: DocumentType, fields: Record<string, any>): Record<string, any> {
@@ -51,6 +52,25 @@ function applyGrounding(
 // AI는 템플릿 지시에 따라 { isMultipleDocuments: true, documents: [...] } 형태로 반환한다.
 // 이 응답은 단일 문서의 fields 자리에 담겨 오므로, 소비자(batch/payroll)가 읽는 최상위로 승격한다.
 // (승격하지 않으면 여러 달치가 fields 안에 묻혀 1건으로만 처리된다)
+// 앵커 검증: 판별된 유형의 결정적 단서가 원문에 실제로 있는지 확인한다.
+// 유형은 버리거나 바꾸지 않고 "확인 필요" 사유만 돌려준다 (lib/typeAnchors.ts)
+function collectTypeWarnings(
+  types: DocumentType[],
+  sourceText: string | undefined
+): string[] {
+  if (!sourceText) return []
+  const warnings: string[] = []
+  const detected = [...new Set(types)]
+  for (const type of detected) {
+    const result = checkTypeAnchors(type, sourceText, detected)
+    if (!result.ok && result.reason) {
+      console.warn(`[앵커 검증] ${result.reason}`)
+      warnings.push(result.reason)
+    }
+  }
+  return warnings
+}
+
 function buildExtractionResponse(
   documentType: DocumentType,
   rawFields: Record<string, any>,
@@ -66,20 +86,24 @@ function buildExtractionResponse(
       return { documentType: type, fields: postProcessFields(type, grounded) }
     })
     console.log(`=== 동일 유형 다중 문서 승격: ${documentType} ${documents.length}건 ===`)
+    const typeWarnings = collectTypeWarnings(documents.map((d: any) => d.documentType), sourceText)
     return NextResponse.json({
       isMultipleDocuments: true,
       documents,
       extractionMethod: `${extractionMethod}-multi`,
       ...(warnings.length > 0 && { groundingWarnings: warnings }),
+      ...(typeWarnings.length > 0 && { typeWarnings }),
     })
   }
 
   const grounded = applyGrounding(documentType, rawFields, sourceText, warnings)
+  const typeWarnings = collectTypeWarnings([documentType], sourceText)
   return NextResponse.json({
     documentType,
     fields: postProcessFields(documentType, grounded),
     extractionMethod,
     ...(warnings.length > 0 && { groundingWarnings: warnings }),
+    ...(typeWarnings.length > 0 && { typeWarnings }),
   })
 }
 
@@ -145,11 +169,16 @@ export async function POST(request: NextRequest) {
           }
         })
 
+        const typeWarnings = collectTypeWarnings(
+          processedResults.map((r) => r.documentType),
+          pdfText
+        )
         return NextResponse.json({
           isMultipleDocuments: true,
           documents: processedResults,
           extractionMethod: 'text-multi',
           ...(warnings.length > 0 && { groundingWarnings: warnings }),
+          ...(typeWarnings.length > 0 && { typeWarnings }),
         })
       }
 
