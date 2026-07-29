@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('=== Google Vision OCR API 호출 ===')
+    console.log('=== Google OCR API 호출 ===')
     console.log('이미지 수:', images.length)
     console.log('문서 모드:', useDocumentMode ? 'Yes' : 'No')
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ text: fullText })
   } catch (error) {
-    console.error('Google Vision OCR 오류:', error)
+    console.error('Google OCR 오류:', error)
     return NextResponse.json(
       { error: 'OCR 처리 중 오류가 발생했습니다.' },
       { status: 500 }

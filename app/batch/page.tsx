@@ -98,7 +98,7 @@ export default function BatchPage() {
     return images
   }
 
-  // Google Vision OCR 호출.
+  // Google Cloud Vision OCR 호출. (Claude Vision과 다른 서비스다 — 이쪽은 텍스트만 뽑는다)
   // 장수가 아니라 실제 전송 크기로 묶는다. 페이지당 용량은 문서에 따라 수십 배 차이가 나므로
   // "5장씩"처럼 장수로 나누면 큰 페이지가 몇 장만 모여도 요청 한도를 넘는다.
   const callGoogleOcr = async (images: { base64: string; mediaType: string }[]): Promise<string> => {
@@ -169,6 +169,12 @@ export default function BatchPage() {
       setFiles((prev) => [...prev, ...newFiles])
     }
   }
+
+  // 텍스트를 이미 확보한 경우, 추출 API에는 파일 "이름"만 필요하다.
+  // 원본 바이트를 그대로 실어 보내면(스캔본 PNG는 수 MB) 쓰이지도 않은 채
+  // 요청 한도를 넘겨 413이 난다. 서버는 text/plain 파일의 내용을 건너뛴다.
+  const createNameOnlyMarker = (fileName: string) =>
+    new File([], fileName, { type: 'text/plain' })
 
   // 이미지를 지정한 배율·품질로 다시 인코딩한다.
   const encodeImage = (img: HTMLImageElement, factor: number, quality: number) => {
@@ -293,11 +299,11 @@ export default function BatchPage() {
         // 텍스트 기반 추출
         console.log('✓ 텍스트 추출 성공!')
         formData.append('pdfText', text)
-        formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+        formData.append('file0', createNameOnlyMarker(fileItem.file.name))
         formData.append('fileCount', '1')
       } else {
         // 2. 스캔 PDF - Google Vision OCR 시도
-        console.log('✗ 스캔 PDF 감지! Google Vision OCR 사용')
+        console.log('✗ 스캔 PDF 감지! Google OCR 사용')
         const images = await convertPdfToBase64Images(fileItem.file)
         console.log(`${images.length}개 페이지 이미지 변환 완료`)
 
@@ -307,7 +313,7 @@ export default function BatchPage() {
         if (hasEnoughText(ocrText)) {
           // OCR 텍스트로 추출
           formData.append('pdfText', ocrText)
-          formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+          formData.append('file0', createNameOnlyMarker(fileItem.file.name))
           formData.append('fileCount', '1')
         } else {
           // 3. Claude Vision 사용 (이미지 직접 전송)
@@ -327,7 +333,7 @@ export default function BatchPage() {
         }
       }
     } else if (fileItem.file.type.startsWith('image/')) {
-      // 이미지 파일: Google Vision OCR 사용
+      // 이미지 파일: Google OCR 사용
       console.log(`=== 이미지 처리: ${fileItem.file.name} ===`)
 
       const imageData = await convertImageToBase64(fileItem.file)
@@ -340,7 +346,7 @@ export default function BatchPage() {
       if (hasEnoughText(ocrText)) {
         // OCR 텍스트로 추출
         formData.append('pdfText', ocrText)
-        formData.append('file0', new File([fileItem.file], fileItem.file.name, { type: 'text/plain' }))
+        formData.append('file0', createNameOnlyMarker(fileItem.file.name))
         formData.append('fileCount', '1')
       } else if (imageData.quality.isLow) {
         // OCR이 실패했고 원인이 화질이면 Claude Vision으로 넘기지 않는다.
