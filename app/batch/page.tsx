@@ -15,6 +15,7 @@ import {
 } from '@/lib/imagePayload'
 import { hasEnoughText } from '@/lib/textGate'
 import { computePdfRenderScale } from '@/lib/pdfRender'
+import { DOCUMENT_TYPE_LABELS } from '@/lib/documentFields'
 
 interface ProcessingFile {
   file: File
@@ -26,6 +27,11 @@ interface ProcessingFile {
   groundingWarnings?: string[]
   // 저화질 경고. 처리는 했지만 값을 그대로 믿기 어렵다는 신호
   qualityWarning?: string
+  // 앵커 검증에서 나온 "유형 확인 필요" 사유.
+  // 유형을 바꾸지는 않고, 사용자가 판단할 근거만 보여준다
+  typeWarnings?: string[]
+  // 사용자가 직접 지정한 유형 (재처리 시 AI 판별을 건너뛴다)
+  overrideType?: DocumentType
 }
 
 export default function BatchPage() {
@@ -280,9 +286,19 @@ export default function BatchPage() {
 
   const processFile = async (
     fileItem: ProcessingFile
-  ): Promise<{ results: ExtractedData[]; groundingWarnings?: string[]; qualityWarning?: string }> => {
+  ): Promise<{
+    results: ExtractedData[]
+    groundingWarnings?: string[]
+    qualityWarning?: string
+    typeWarnings?: string[]
+  }> => {
     const formData = new FormData()
     let qualityWarning: string | undefined
+
+    // 사용자가 유형을 직접 지정했으면 AI 판별을 건너뛴다
+    if (fileItem.overrideType) {
+      formData.append('documentType', fileItem.overrideType)
+    }
 
     // PDF 처리: 텍스트 추출 시도 -> OCR -> 이미지 변환
     if (fileItem.file.type === 'application/pdf') {
@@ -396,7 +412,54 @@ export default function BatchPage() {
       )
     }
 
-    return { results, groundingWarnings: data.groundingWarnings, qualityWarning }
+    return {
+      results,
+      groundingWarnings: data.groundingWarnings,
+      qualityWarning,
+      typeWarnings: data.typeWarnings,
+    }
+  }
+
+  // 사용자가 유형을 직접 지정해 한 파일만 다시 처리한다.
+  // "확인 필요"라고 알리기만 하고 고칠 방법을 주지 않으면 경고가 무의미하다.
+  const reprocessWithType = async (fileIndex: number, documentType: DocumentType) => {
+    const target = files[fileIndex]
+    if (!target) return
+
+    setFiles((prev) =>
+      prev.map((f, idx) =>
+        idx === fileIndex ? { ...f, status: 'processing', overrideType: documentType } : f
+      )
+    )
+
+    try {
+      const { results, groundingWarnings, qualityWarning, typeWarnings } = await processFile({
+        ...target,
+        overrideType: documentType,
+      })
+      setFiles((prev) =>
+        prev.map((f, idx) =>
+          idx === fileIndex
+            ? {
+                ...f,
+                status: 'completed',
+                result: results,
+                groundingWarnings,
+                qualityWarning,
+                // 사용자가 직접 고른 유형이므로 유형 경고는 더 이상 띄우지 않는다
+                typeWarnings: undefined,
+                error: undefined,
+              }
+            : f
+        )
+      )
+    } catch (error) {
+      setFiles((prev) =>
+        prev.map((f, idx) =>
+          idx === fileIndex ? { ...f, status: 'error', error: (error as Error).message } : f
+        )
+      )
+    }
   }
 
   const startBatchProcess = async () => {
@@ -416,11 +479,19 @@ export default function BatchPage() {
       )
 
       try {
-        const { results, groundingWarnings, qualityWarning } = await processFile(fileItem)
+        const { results, groundingWarnings, qualityWarning, typeWarnings } =
+          await processFile(fileItem)
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === fileIndex
-              ? { ...f, status: 'completed', result: results, groundingWarnings, qualityWarning }
+              ? {
+                  ...f,
+                  status: 'completed',
+                  result: results,
+                  groundingWarnings,
+                  qualityWarning,
+                  typeWarnings,
+                }
               : f
           )
         )
@@ -590,11 +661,20 @@ export default function BatchPage() {
 
                       <span className="truncate">{fileItem.file.name}</span>
 
+                      {/* 유형 배지 — 앵커 검증이 걸리면 색과 문구로 확인이 필요함을 알린다.
+                          경고를 아래에 따로 두지 않고 문제가 되는 대상 옆에 붙인다 */}
                       {fileItem.result && fileItem.result.length > 0 && (
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            fileItem.typeWarnings?.length
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
                           {fileItem.result.length > 1
                             ? `복합: ${fileItem.result.map(r => r.documentType).join(', ')}`
                             : fileItem.result[0].documentType}
+                          {fileItem.typeWarnings?.length ? ' ⚠ 확인 필요' : ''}
                         </span>
                       )}
 
@@ -614,6 +694,39 @@ export default function BatchPage() {
                       </button>
                     )}
                     </div>
+
+                    {/* 유형 확인 필요 — 어떤 단서를 보고 그렇게 판단했는지까지 보여준다.
+                        "확인하세요"만으로는 무엇을 봐야 할지 알 수 없다.
+                        유형을 직접 고르면 그 유형으로 다시 처리한다 */}
+                    {fileItem.typeWarnings && fileItem.typeWarnings.length > 0 && (
+                      <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                        <p className="text-xs font-medium text-orange-900">문서 유형 확인이 필요합니다</p>
+                        <ul className="mt-1 space-y-0.5">
+                          {fileItem.typeWarnings.map((w, i) => (
+                            <li key={i} className="text-xs text-orange-800">· {w}</li>
+                          ))}
+                        </ul>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs text-orange-800">유형을 직접 지정:</span>
+                          <select
+                            defaultValue=""
+                            disabled={isProcessing}
+                            onChange={(e) => {
+                              const value = e.target.value as DocumentType
+                              if (value) reprocessWithType(index, value)
+                            }}
+                            className="text-xs border border-orange-300 rounded px-2 py-1 bg-white text-orange-900 disabled:opacity-50"
+                          >
+                            <option value="">선택하세요</option>
+                            {(Object.keys(DOCUMENT_TYPE_LABELS) as DocumentType[]).map((t) => (
+                              <option key={t} value={t}>
+                                {DOCUMENT_TYPE_LABELS[t]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
 
                     {/* 화질 경고 — 처리는 됐지만 값을 그대로 믿기 어렵다는 신호.
                         지금까지 콘솔에만 남아 사용자가 판단할 근거가 없었다 */}
