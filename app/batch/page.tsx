@@ -405,6 +405,20 @@ export default function BatchPage() {
     }
 
     const data = await response.json()
+
+    // 토큰 사용량을 브라우저 콘솔에도 남긴다.
+    // 서버 로그를 열지 않아도 어느 단계에서 얼마나 쓰는지 볼 수 있어야
+    // 비용 설계가 의도대로 작동하는지 확인할 수 있다.
+    if (data.tokenUsage) {
+      const { calls, inputTokens, outputTokens } = data.tokenUsage
+      console.log(
+        `[토큰] ${fileItem.file.name}: 입력 ${inputTokens.toLocaleString()} / 출력 ${outputTokens.toLocaleString()} (호출 ${calls.length}회)`
+      )
+      calls.forEach((c: { step: string; inputTokens: number; outputTokens: number }) =>
+        console.log(`         · ${c.step}: ${c.inputTokens.toLocaleString()} / ${c.outputTokens.toLocaleString()}`)
+      )
+    }
+
     const results = processApiResponse(data, fileItem.file.name)
 
     // 값이 하나도 없으면 성공이 아니다 — 조용히 빈 행이 엑셀에 들어가는 것을 막는다

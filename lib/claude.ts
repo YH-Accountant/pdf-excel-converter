@@ -7,6 +7,44 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
+// 토큰 사용량 집계
+//
+// 비용을 계층으로 나눠 설계해놓고도 실제로 어느 단계에서 얼마나 쓰는지는
+// 측정하지 않고 있었다. API 응답에 사용량이 담겨 오는데 그냥 버리고 있었기 때문이다.
+// 호출마다 기록해 두고, 한 문서를 처리하는 동안의 합계를 소비자에게 돌려준다.
+
+export interface TokenUsage {
+  // 호출 단계별 사용량 (유형 판별 / 값 추출 등)
+  calls: { step: string; inputTokens: number; outputTokens: number }[]
+  inputTokens: number
+  outputTokens: number
+}
+
+// 한 요청을 처리하는 동안의 누적치.
+// 서버리스 함수는 요청마다 격리되므로 모듈 스코프에 두어도 요청 간에 섞이지 않지만,
+// 한 함수가 여러 문서를 처리하는 경우가 있어 호출 측에서 명시적으로 초기화한다.
+let usageLog: TokenUsage['calls'] = []
+
+export function resetTokenUsage(): void {
+  usageLog = []
+}
+
+export function getTokenUsage(): TokenUsage {
+  return {
+    calls: [...usageLog],
+    inputTokens: usageLog.reduce((sum, c) => sum + c.inputTokens, 0),
+    outputTokens: usageLog.reduce((sum, c) => sum + c.outputTokens, 0),
+  }
+}
+
+// Anthropic 응답에서 사용량을 꺼내 기록한다.
+function recordUsage(step: string, response: Anthropic.Message): void {
+  const inputTokens = response.usage?.input_tokens ?? 0
+  const outputTokens = response.usage?.output_tokens ?? 0
+  usageLog.push({ step, inputTokens, outputTokens })
+  console.log(`[토큰] ${step}: 입력 ${inputTokens.toLocaleString()} / 출력 ${outputTokens.toLocaleString()}`)
+}
+
 // 문서 유형 자동 인식
 export async function detectDocumentType(base64Image: string, mediaType: string): Promise<DocumentType> {
   const response = await anthropic.messages.create({
@@ -32,6 +70,8 @@ export async function detectDocumentType(base64Image: string, mediaType: string)
       },
     ],
   })
+
+  recordUsage('유형 판별(이미지)', response)
 
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {
@@ -128,6 +168,8 @@ ${documentTypeDetectionPrompt}`,
     ],
   })
 
+  recordUsage('유형 판별(텍스트·폴백)', response)
+
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {
     throw new Error('문서 유형을 인식할 수 없습니다.')
@@ -223,6 +265,8 @@ JSON 배열로 응답해주세요:
     ],
   })
 
+  recordUsage('유형 판별(복합 감지)', response)
+
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {
     throw new Error('문서 유형을 인식할 수 없습니다.')
@@ -315,6 +359,8 @@ JSON 형식으로 응답해주세요.`,
     ],
   })
 
+  recordUsage(`값 추출(${template.label}·복합)`, response)
+
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {
     return {}
@@ -367,6 +413,8 @@ JSON 형식으로 응답해주세요.
       },
     ],
   })
+
+  recordUsage(`값 추출(${template.label}·텍스트)`, response)
 
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {
@@ -455,6 +503,8 @@ JSON 형식으로 응답해주세요. 찾을 수 없는 정보는 null로 표시
       },
     ],
   })
+
+  recordUsage(`값 추출(${template.label}·이미지)`, response)
 
   const textContent = response.content.find((c) => c.type === 'text')
   if (!textContent || textContent.type !== 'text') {

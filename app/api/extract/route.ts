@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { detectDocumentType, detectDocumentTypeFromText, detectMultipleDocumentTypesFromText, extractFromMultipleImages, extractFromText, extractMultipleDocumentsFromText } from '@/lib/claude'
+import { detectDocumentType, detectDocumentTypeFromText, detectMultipleDocumentTypesFromText, extractFromMultipleImages, extractFromText, extractMultipleDocumentsFromText, getTokenUsage, resetTokenUsage } from '@/lib/claude'
 import { DocumentType } from '@/app/single/page'
 import { validateAndFixContractAmount } from '@/lib/koreanAmount'
 import { groundAmountFields } from '@/lib/grounding'
@@ -125,6 +125,7 @@ function buildExtractionResponse(
       ...(warnings.length > 0 && { groundingWarnings: warnings }),
       ...(typeWarnings.length > 0 && { typeWarnings }),
       ...(consistencyWarnings.length > 0 && { consistencyWarnings }),
+      tokenUsage: getTokenUsage(),
     })
   }
 
@@ -139,10 +140,13 @@ function buildExtractionResponse(
     ...(warnings.length > 0 && { groundingWarnings: warnings }),
     ...(typeWarnings.length > 0 && { typeWarnings }),
     ...(consistencyWarnings.length > 0 && { consistencyWarnings }),
+    tokenUsage: getTokenUsage(),
   })
 }
 
 export async function POST(request: NextRequest) {
+  // 이 요청에서 쓴 토큰만 집계하도록 초기화한다
+  resetTokenUsage()
   try {
     const formData = await request.formData()
     const fileCount = parseInt(formData.get('fileCount') as string) || 0
@@ -215,6 +219,7 @@ export async function POST(request: NextRequest) {
           ...(warnings.length > 0 && { groundingWarnings: warnings }),
           ...(typeWarnings.length > 0 && { typeWarnings }),
           ...(consistencyWarnings.length > 0 && { consistencyWarnings }),
+          tokenUsage: getTokenUsage(),
         })
       }
 
@@ -290,6 +295,7 @@ export async function POST(request: NextRequest) {
       pageCount: images.length,
       extractionMethod: 'image',
       ...(consistencyWarnings.length > 0 && { consistencyWarnings }),
+      tokenUsage: getTokenUsage(),
     })
   } catch (error) {
     console.error('추출 오류:', error)
