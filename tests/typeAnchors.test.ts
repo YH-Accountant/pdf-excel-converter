@@ -91,12 +91,73 @@ test('한 글자 앵커를 쓰지 않아 평범한 조사에 걸리지 않는다
   assert.deepEqual(r.found, [])
 })
 
-test('자간을 벌린 제목도 단서로 인식한다 — 급 여 대 장', () => {
-  // 한국 서식은 제목을 띄어 쓰는 일이 흔하고 OCR도 공백을 끼워 넣는다
-  const r = checkTypeAnchors('payroll', '급 여 대 장   귀속연월 2025년 01월   기 본 급')
+test('자간을 벌린 항목명도 단서로 인식한다 — 기 본 급', () => {
+  // 한국 서식은 제목·항목명을 띄어 쓰는 일이 흔하고 OCR도 공백을 끼워 넣는다
+  const r = checkTypeAnchors('payroll', '급 여 대 장   귀속연월 2025년 01월   기 본 급   차인지급액')
   assert.equal(r.ok, true)
-  assert.ok(r.found.includes('급여'), '띄어쓴 제목에서 급여를 찾아야 함')
-  assert.ok(r.found.includes('기본급'), '띄어쓴 항목명도 찾아야 함')
+  assert.ok(r.found.includes('기본급'), '띄어쓴 항목명을 찾아야 함')
+})
+
+// ─── 앵커의 배타성 ───────────────────────────────────────────
+// 다른 유형에도 흔한 단어를 앵커로 두면, 유형이 완전히 틀렸을 때도
+// 그 단어 하나로 검증을 통과한다. 실제로 발견된 사례를 회귀 테스트로 고정한다.
+
+const 급여대장 = `
+급여대장   귀속연월 2025년 01월   지급일 2025-01-25
+사번 성명 기본급 수당 지급총액 소득세 지방소득세 공제계 차인지급액
+1001 홍길동 3,000,000 500,000 3,500,000 120,000 12,000 260,000 3,108,000
+합계 8명 24,950,330   실지급액 22,180,000
+`
+
+const 원천징수신고서 = `
+원천징수이행상황신고서   징수의무자 (주)가상물산
+귀속연월 2025년 01월   지급연월 2025년 02월
+소득구분 근로소득  간이세액 A01  인원 8  총지급액 24,950,330  소득세 등 873,220
+`
+
+test('★ 급여대장을 원천징수신고서로 오분류하면 잡아낸다', () => {
+  // 급여대장에도 "귀속연월"이 인쇄되어 있어, 이것이 앵커였을 때는
+  // 유형이 틀려도 그 단어 하나로 통과했다.
+  const r = checkTypeAnchors('withholdingTax', 급여대장)
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.found, [], '원천징수 고유 단서는 하나도 없어야 한다')
+  assert.match(r.reason!, /payroll 단서가 나타납니다/)
+})
+
+test('원천징수신고서를 급여대장으로 오분류해도 잡아낸다', () => {
+  const r = checkTypeAnchors('payroll', 원천징수신고서)
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.found, [])
+})
+
+test('두 문서 모두 제 유형으로는 통과한다 — 오탐 방지', () => {
+  assert.equal(checkTypeAnchors('payroll', 급여대장).ok, true)
+  assert.equal(checkTypeAnchors('withholdingTax', 원천징수신고서).ok, true)
+})
+
+test('견적서를 계약서로 오분류하면 잡아낸다', () => {
+  // "귀중"이 계약서 앵커가 아니고, 날인란 "(인)"도 앵커가 아니어야 걸린다
+  const r = checkTypeAnchors('contract', 견적서)
+  assert.equal(r.ok, false)
+})
+
+test('거래명세서를 세금계산서로 오분류하면 잡아낸다', () => {
+  // 거래명세서에도 "공급가액" 칸이 있어, 이것이 앵커였을 때는 통과했다
+  const r = checkTypeAnchors('taxInvoice', 거래명세서)
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.found, [])
+})
+
+test('앵커에 서로 다른 유형이 공유하는 단어가 없다', () => {
+  // 두 유형의 앵커 목록에 같은 단어가 있으면 그 단어는 배타적이지 않다
+  const seen = new Map<string, string>()
+  for (const [type, anchors] of Object.entries(TYPE_ANCHORS)) {
+    for (const a of anchors) {
+      const prev = seen.get(a)
+      assert.equal(prev, undefined, `"${a}"가 ${prev}와 ${type}에 중복 정의됨`)
+      seen.set(a, type)
+    }
+  }
 })
 
 test('모든 유형에 앵커가 정의되어 있다', () => {
